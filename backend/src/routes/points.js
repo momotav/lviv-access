@@ -21,10 +21,11 @@ router.get('/', async (req, res, next) => {
       // bbox format: minLng,minLat,maxLng,maxLat
       const parts = bbox.split(',').map(Number);
       if (parts.length === 4 && parts.every((n) => !Number.isNaN(n))) {
-        params.push(parts[0], parts[1], parts[2], parts[3]);
+        const [minLng, minLat, maxLng, maxLat] = parts;
+        params.push(minLng, maxLng, minLat, maxLat);
         const i = params.length;
         conditions.push(
-          `ST_Intersects(location::geometry, ST_MakeEnvelope($${i - 3}, $${i - 2}, $${i - 1}, $${i}, 4326))`
+          `lng BETWEEN $${i - 3} AND $${i - 2} AND lat BETWEEN $${i - 1} AND $${i}`
         );
       }
     }
@@ -36,8 +37,8 @@ router.get('/', async (req, res, next) => {
         category,
         name,
         description,
-        ST_Y(location::geometry) AS lat,
-        ST_X(location::geometry) AS lng,
+        lat,
+        lng,
         accessibility_rating,
         created_at
       FROM points
@@ -57,11 +58,8 @@ router.get('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
     const result = await query(
-      `SELECT
-        id, category, name, description,
-        ST_Y(location::geometry) AS lat,
-        ST_X(location::geometry) AS lng,
-        accessibility_rating, created_at
+      `SELECT id, category, name, description, lat, lng,
+              accessibility_rating, created_at
        FROM points WHERE id = $1`,
       [id]
     );
@@ -102,14 +100,11 @@ router.post('/', async (req, res, next) => {
     }
 
     const result = await query(
-      `INSERT INTO points (category, name, description, location, accessibility_rating)
-       VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography, $6)
-       RETURNING
-         id, category, name, description,
-         ST_Y(location::geometry) AS lat,
-         ST_X(location::geometry) AS lng,
-         accessibility_rating, created_at`,
-      [category, name.trim(), description?.trim() || null, lng, lat, rating]
+      `INSERT INTO points (category, name, description, lat, lng, accessibility_rating)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, category, name, description, lat, lng,
+                 accessibility_rating, created_at`,
+      [category, name.trim(), description?.trim() || null, lat, lng, rating]
     );
 
     res.status(201).json(result.rows[0]);
