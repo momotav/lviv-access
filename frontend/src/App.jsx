@@ -9,11 +9,21 @@ export default function App() {
   const [points, setPoints] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeFilters, setActiveFilters] = useState(CATEGORY_LIST);
-  const [addMode, setAddMode] = useState(false);
-  const [pendingCoords, setPendingCoords] = useState(null);
   const [error, setError] = useState(null);
 
-  // Load all points on mount
+  // Add-point state
+  const [addMode, setAddMode] = useState(false);
+  const [pendingCoords, setPendingCoords] = useState(null);
+
+  // Routing state
+  const [routingMode, setRoutingMode] = useState(null); // null | 'from' | 'to'
+  const [routeFrom, setRouteFrom] = useState(null);
+  const [routeTo, setRouteTo] = useState(null);
+  const [waypointType, setWaypointType] = useState(null);
+  const [routeData, setRouteData] = useState(null);
+  const [routeError, setRouteError] = useState(null);
+  const [routeLoading, setRouteLoading] = useState(false);
+
   useEffect(() => {
     let mounted = true;
     api.listPoints()
@@ -39,10 +49,31 @@ export default function App() {
     );
   }, []);
 
-  const handleMapClick = useCallback((latlng) => {
-    setPendingCoords({ lat: latlng.lat, lng: latlng.lng });
-    setAddMode(false);
+  // When user enters add-mode, exit any routing mode
+  const handleSetAddMode = useCallback((val) => {
+    setAddMode(val);
+    if (val) setRoutingMode(null);
   }, []);
+
+  // When user enters routing-mode, exit add-mode
+  const handleSetRoutingMode = useCallback((mode) => {
+    setRoutingMode(mode);
+    if (mode) setAddMode(false);
+  }, []);
+
+  // Map clicks: dispatch to the right handler depending on mode
+  const handleMapClick = useCallback((latlng) => {
+    if (addMode) {
+      setPendingCoords({ lat: latlng.lat, lng: latlng.lng });
+      setAddMode(false);
+    } else if (routingMode === 'from') {
+      setRouteFrom({ lat: latlng.lat, lng: latlng.lng });
+      setRoutingMode(null);
+    } else if (routingMode === 'to') {
+      setRouteTo({ lat: latlng.lat, lng: latlng.lng });
+      setRoutingMode(null);
+    }
+  }, [addMode, routingMode]);
 
   const handleSubmitPoint = useCallback(async (data) => {
     const newPoint = await api.createPoint(data);
@@ -59,6 +90,38 @@ export default function App() {
     }
   }, []);
 
+  const handleComputeRoute = useCallback(async () => {
+    if (!routeFrom || !routeTo) return;
+    setRouteLoading(true);
+    setRouteError(null);
+    setRouteData(null);
+    try {
+      const data = await api.computeRoute({
+        from: routeFrom,
+        to: routeTo,
+        waypointType,
+      });
+      setRouteData(data);
+    } catch (err) {
+      setRouteError(err.message || 'Failed to compute route');
+    } finally {
+      setRouteLoading(false);
+    }
+  }, [routeFrom, routeTo, waypointType]);
+
+  const handleClearRoute = useCallback(() => {
+    setRouteFrom(null);
+    setRouteTo(null);
+    setRouteData(null);
+    setRouteError(null);
+    setRoutingMode(null);
+  }, []);
+
+  const cancelInteraction = useCallback(() => {
+    setAddMode(false);
+    setRoutingMode(null);
+  }, []);
+
   const visiblePoints = points.filter((p) => activeFilters.includes(p.category));
 
   return (
@@ -68,7 +131,20 @@ export default function App() {
         activeFilters={activeFilters}
         toggleFilter={toggleFilter}
         addMode={addMode}
-        setAddMode={setAddMode}
+        setAddMode={handleSetAddMode}
+        routingMode={routingMode}
+        setRoutingMode={handleSetRoutingMode}
+        routeFrom={routeFrom}
+        routeTo={routeTo}
+        setRouteFrom={setRouteFrom}
+        setRouteTo={setRouteTo}
+        waypointType={waypointType}
+        setWaypointType={setWaypointType}
+        onComputeRoute={handleComputeRoute}
+        onClearRoute={handleClearRoute}
+        routeData={routeData}
+        routeError={routeError}
+        routeLoading={routeLoading}
       />
 
       <div style={{ position: 'relative', overflow: 'hidden' }}>
@@ -82,9 +158,13 @@ export default function App() {
           <MapView
             points={visiblePoints}
             addMode={addMode}
+            routingMode={routingMode}
             onMapClick={handleMapClick}
             onDeletePoint={handleDeletePoint}
-            cancelAddMode={() => setAddMode(false)}
+            cancelInteraction={cancelInteraction}
+            routeFrom={routeFrom}
+            routeTo={routeTo}
+            routeData={routeData}
           />
         )}
       </div>
