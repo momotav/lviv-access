@@ -1,21 +1,20 @@
 import { pool } from './pool.js';
 
 const SCHEMA = `
-CREATE EXTENSION IF NOT EXISTS postgis;
-
 CREATE TABLE IF NOT EXISTS points (
   id SERIAL PRIMARY KEY,
   category VARCHAR(50) NOT NULL,
   name VARCHAR(200) NOT NULL,
   description TEXT,
-  location GEOGRAPHY(POINT, 4326) NOT NULL,
+  lat DOUBLE PRECISION NOT NULL,
+  lng DOUBLE PRECISION NOT NULL,
   accessibility_rating SMALLINT CHECK (accessibility_rating BETWEEN 1 AND 5),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_points_location ON points USING GIST (location);
 CREATE INDEX IF NOT EXISTS idx_points_category ON points (category);
+CREATE INDEX IF NOT EXISTS idx_points_lat_lng ON points (lat, lng);
 `;
 
 const SEED_DATA = [
@@ -50,9 +49,9 @@ export async function initDb() {
       console.log('Seeding initial data...');
       for (const [category, name, description, lat, lng, rating] of SEED_DATA) {
         await client.query(
-          `INSERT INTO points (category, name, description, location, accessibility_rating)
-           VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography, $6)`,
-          [category, name, description, lng, lat, rating]
+          `INSERT INTO points (category, name, description, lat, lng, accessibility_rating)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [category, name, description, lat, lng, rating]
         );
       }
       console.log(`Seeded ${SEED_DATA.length} points.`);
