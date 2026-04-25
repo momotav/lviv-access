@@ -1,4 +1,3 @@
-// Use VITE_API_URL in production (set on Vercel), proxy /api in dev
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
 async function request(path, options = {}) {
@@ -33,4 +32,10 @@ export const api = {
     request('/points', { method: 'POST', body: JSON.stringify(data) }),
   deletePoint: (id) =>
     request(`/points/${id}`, { method: 'DELETE' }),
+  // NEW: compute route
+  computeRoute: ({ from, to, waypointType }) =>
+    request('/route', {
+      method: 'POST',
+      body: JSON.stringify({ from, to, waypointType }),
+    }),
 };
