@@ -3,6 +3,7 @@ console.log('Node version:', process.version);
 console.log('PORT env:', process.env.PORT);
 console.log('DATABASE_URL set:', !!process.env.DATABASE_URL);
 console.log('ORS_API_KEY set:', !!process.env.ORS_API_KEY);
+console.log('TELEGRAM_BOT_TOKEN set:', !!process.env.TELEGRAM_BOT_TOKEN);
 console.log('NODE_ENV:', process.env.NODE_ENV);
 
 import express from 'express';
@@ -13,7 +14,9 @@ dotenv.config();
 
 import pointsRouter from './routes/points.js';
 import routeRouter from './routes/route.js';
+import { createBotRouter } from './routes/bot.js';
 import { initDb } from './db/migrate.js';
+import { createBot } from './services/bot.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -30,18 +33,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/points', pointsRouter);
 app.use('/api/route', routeRouter);
 
-app.use((err, req, res, next) => {
-  console.error('Error:', err);
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal server error',
-  });
-});
-
-// Start the HTTP server first, init DB in background.
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Server listening on 0.0.0.0:${PORT}`);
-});
-
-initDb().catch((err) => {
-  console.error('⚠️ Database init failed:', err.message);
-});
+// ============================================================
+// Telegram bot wiring
+// ============================================================
+const botToken = process.env.TELEGR
