@@ -5,6 +5,19 @@ import AddPointModal from './components/AddPointModal.jsx';
 import { CATEGORY_LIST } from './lib/categories.jsx';
 import { api } from './lib/api.js';
 
+/**
+ * Parse "lat,lng" string from URL query into { lat, lng } object.
+ * Returns null if the value is missing or malformed.
+ */
+function parseLatLng(str) {
+  if (!str) return null;
+  const parts = str.split(',').map((s) => parseFloat(s.trim()));
+  if (parts.length !== 2 || parts.some(Number.isNaN)) return null;
+  const [lat, lng] = parts;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { lat, lng };
+}
+
 export default function App() {
   const [points, setPoints] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -15,14 +28,31 @@ export default function App() {
   const [addMode, setAddMode] = useState(false);
   const [pendingCoords, setPendingCoords] = useState(null);
 
-  // Routing state
+  // Routing state — initialised from URL query if present
   const [routingMode, setRoutingMode] = useState(null); // null | 'from' | 'to'
-  const [routeFrom, setRouteFrom] = useState(null);
-  const [routeTo, setRouteTo] = useState(null);
+  const [routeFrom, setRouteFrom] = useState(() => {
+    if (typeof window === 'undefined') return null;
+    return parseLatLng(new URLSearchParams(window.location.search).get('from'));
+  });
+  const [routeTo, setRouteTo] = useState(() => {
+    if (typeof window === 'undefined') return null;
+    return parseLatLng(new URLSearchParams(window.location.search).get('to'));
+  });
   const [waypointType, setWaypointType] = useState(null);
   const [routeData, setRouteData] = useState(null);
   const [routeError, setRouteError] = useState(null);
   const [routeLoading, setRouteLoading] = useState(false);
+
+  // Clean the URL query string after we've read from it, so reloads don't
+  // surprise the user with the same route always pre-filled.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('from') || params.has('to')) {
+      const cleanUrl = window.location.pathname + window.location.hash;
+      window.history.replaceState({}, '', cleanUrl);
+    }
+  }, []);
 
   useEffect(() => {
     let mounted = true;
