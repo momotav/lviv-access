@@ -8,7 +8,11 @@
  *   /start    Welcome + brief tutorial
  *   /help     List commands
  *   /find     "What's near me?" — user shares location, bot returns nearby points
+ *             Each result includes a "Build route here" button that opens the
+ *             web app pre-filled with the user's location as origin and the
+ *             point's location as destination.
  *   /add      Multi-step: location → category → name → description → rating
+ *             On success, offers a "Build route here" button for the new point.
  *   /cancel   Cancel current /add flow
  *
  * Identity model: users are identified by Telegram chat ID. No accounts
@@ -29,13 +33,21 @@ const CATEGORY_LABELS = {
 };
 
 // In-memory state for /add conversations.
-// Key: chat id (number). Value: { step, data }.
-// Steps: 'location' → 'category' → 'name' → 'description' → 'rating' → done
 const addState = new Map();
 
-const ADD_STEPS = ['location', 'category', 'name', 'description', 'rating'];
-
 const WEB_URL = process.env.WEB_URL || 'https://lviv-access.vercel.app';
+
+/**
+ * Build a web URL that pre-fills the route panel.
+ * Either or both coords may be null; only set the ones we have.
+ */
+function buildRouteUrl({ from, to }) {
+  const params = new URLSearchParams();
+  if (from) params.set('from', `${from.lat},${from.lng}`);
+  if (to) params.set('to', `${to.lat},${to.lng}`);
+  const qs = params.toString();
+  return qs ? `${WEB_URL}/?${qs}` : WEB_URL;
+}
 
 export function createBot(token) {
   if (!token) throw new Error('TELEGRAM_BOT_TOKEN is not set');
@@ -82,10 +94,10 @@ export function createBot(token) {
   });
 
   // ============================================================
-  // /find — request location, then return nearby points
+  // /find
   // ============================================================
   bot.command('find', async (ctx) => {
-    addState.delete(ctx.chat.id); // clear any in-progress /add
+    addState.delete(ctx.chat.id);
     await ctx.reply(
       '📍 Send me your location and I\'ll find the nearest accessibility points.\n\n' +
       'On Telegram mobile: tap the 📎 attachment icon → Location → Send My Current Location.',
@@ -93,12 +105,11 @@ export function createBot(token) {
         .oneTime()
         .resize()
     );
-    // Mark this chat as awaiting location for /find (not /add)
     addState.set(ctx.chat.id, { step: 'find-location' });
   });
 
   // ============================================================
-  // /add — multi-step point creation
+  // /add — multi-step
   // ============================================================
   bot.command('add', async (ctx) => {
     addState.set(ctx.chat.id, { step: 'location', data: {} });
@@ -116,29 +127,26 @@ export function createBot(token) {
   });
 
   // ============================================================
-  // Handle location messages — either for /find or /add
+  // Location messages
   // ============================================================
   bot.on('location', async (ctx) => {
     const chatId = ctx.chat.id;
     const state = addState.get(chatId);
     const { latitude: lat, longitude: lng } = ctx.message.location;
 
-    // Case 1: user is in /find flow
     if (state?.step === 'find-location') {
       addState.delete(chatId);
       await handleFindNearby(ctx, lat, lng);
       return;
     }
 
-    // Case 2: user is in /add flow at the location step
     if (state?.step === 'location') {
       state.data.lat = lat;
       state.data.lng = lng;
       state.step = 'category';
 
       await ctx.reply(
-        '✅ Location received.\n\n' +
-        '*Step 2/5 — pick a category:*',
+        '✅ Location received.\n\n*Step 2/5 — pick a category:*',
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
@@ -153,14 +161,13 @@ export function createBot(token) {
       return;
     }
 
-    // Stray location — not expected
     await ctx.reply(
       'Received a location, but I wasn\'t expecting one. Send /find or /add first.'
     );
   });
 
   // ============================================================
-  // Category callback (button taps in /add flow)
+  // Category callback (in /add)
   // ============================================================
   bot.action(/^cat:(.+)$/, async (ctx) => {
     const chatId = ctx.chat.id;
@@ -169,7 +176,6 @@ export function createBot(token) {
       await ctx.answerCbQuery('That button is no longer active.');
       return;
     }
-
     const category = ctx.match[1];
     state.data.category = category;
     state.step = 'name';
@@ -196,27 +202,23 @@ export function createBot(token) {
       await ctx.answerCbQuery('That button is no longer active.');
       return;
     }
-
     const choice = ctx.match[1];
     state.data.rating = choice === 'skip' ? null : parseInt(choice, 10);
 
     await ctx.answerCbQuery(
       choice === 'skip' ? 'Skipped' : `${'★'.repeat(parseInt(choice, 10))}`
     );
-
     await ctx.editMessageText(
       choice === 'skip'
         ? '✅ Rating: skipped'
         : `✅ Rating: ${'★'.repeat(parseInt(choice, 10))}${'☆'.repeat(5 - parseInt(choice, 10))}`
     );
-
-    // Save the point
     await savePoint(ctx, state.data);
     addState.delete(chatId);
   });
 
   // ============================================================
-  // Skip-description callback
+  // Skip description
   // ============================================================
   bot.action('desc:skip', async (ctx) => {
     const chatId = ctx.chat.id;
@@ -233,10 +235,9 @@ export function createBot(token) {
   });
 
   // ============================================================
-  // Text messages — used for name and description in /add flow
+  // Text messages — name + description in /add
   // ============================================================
   bot.on('text', async (ctx) => {
-    // Ignore commands (those start with "/") — Telegraf routes those above
     if (ctx.message.text.startsWith('/')) return;
 
     const chatId = ctx.chat.id;
@@ -283,13 +284,11 @@ export function createBot(token) {
       return;
     }
 
-    // Unexpected text in some other state
     await ctx.reply(
       'I\'m waiting for a different kind of input. Send /cancel to start over.'
     );
   });
 
-  // Error handler
   bot.catch((err, ctx) => {
     console.error('Bot error for update', ctx.update.update_id, err);
     ctx.reply('Something went wrong. Please try /cancel and try again.').catch(() => {});
@@ -343,27 +342,33 @@ async function savePoint(ctx, data) {
       ? `${'★'.repeat(data.rating)}${'☆'.repeat(5 - data.rating)}`
       : 'not rated';
 
+    // Build a "route to this new point" URL. We don't know the user's
+    // origin in this context, so pass only `to` — the user can pick A
+    // on the map afterwards, OR open the link later from a fresh /find.
+    const routeUrl = buildRouteUrl({ to: { lat: data.lat, lng: data.lng } });
+
     await ctx.reply(
       `🎉 *Saved!*\n\n` +
       `*${data.name}*\n` +
       `${CATEGORY_LABELS[data.category]}\n` +
       `📍 ${data.lat.toFixed(5)}, ${data.lng.toFixed(5)}\n` +
-      `Rating: ${ratingStr}\n\n` +
-      `View on the map: ${WEB_URL}`,
-      { parse_mode: 'Markdown' }
+      `Rating: ${ratingStr}`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.url('🗺️ Build route here', routeUrl)],
+          [Markup.button.url('Open map', WEB_URL)],
+        ]),
+      }
     );
   } catch (err) {
     console.error('Failed to save point:', err);
-    await ctx.reply(
-      '❌ Failed to save the point. Please try again later.'
-    );
+    await ctx.reply('❌ Failed to save the point. Please try again later.');
   }
 }
 
 async function handleFindNearby(ctx, lat, lng) {
   try {
-    // Pull all points; sort in JS by Haversine distance.
-    // Acceptable for thesis-scale data (~hundreds of points).
     const result = await query(
       `SELECT id, category, name, description, lat, lng, accessibility_rating
        FROM points`
@@ -382,30 +387,50 @@ async function handleFindNearby(ctx, lat, lng) {
       .sort((a, b) => a.distance - b.distance)
       .slice(0, 5);
 
-    let message = '*Nearest accessibility points:*\n\n';
-    scored.forEach((p, i) => {
+    // Send a header message
+    await ctx.reply(
+      `*Nearest accessibility points* (from your location):`,
+      { parse_mode: 'Markdown' }
+    );
+
+    // Send one message per point with its own "Build route here" button.
+    // This is necessary because Telegram inline buttons are per-message —
+    // we can't put 5 different URL buttons in one message and have them
+    // attach to the right text.
+    for (let i = 0; i < scored.length; i++) {
+      const p = scored[i];
       const distStr =
         p.distance < 1000
           ? `${Math.round(p.distance)} m`
           : `${(p.distance / 1000).toFixed(1)} km`;
       const ratingStr = p.accessibility_rating
-        ? ' ' + '★'.repeat(p.accessibility_rating)
+        ? '\n' + '★'.repeat(p.accessibility_rating) +
+          '☆'.repeat(5 - p.accessibility_rating)
         : '';
-      message +=
-        `${i + 1}. ${CATEGORY_LABELS[p.category] || p.category}${ratingStr}\n` +
-        `   *${p.name}* — ${distStr}\n`;
-      if (p.description) {
-        const short = p.description.length > 80
-          ? p.description.substring(0, 77) + '…'
-          : p.description;
-        message += `   _${short}_\n`;
-      }
-      message += '\n';
-    });
+      const descStr = p.description
+        ? `\n_${p.description.length > 120
+            ? p.description.substring(0, 117) + '…'
+            : p.description}_`
+        : '';
 
-    message += `Full map: ${WEB_URL}`;
+      const routeUrl = buildRouteUrl({
+        from: { lat, lng },
+        to: { lat: p.lat, lng: p.lng },
+      });
 
-    await ctx.reply(message, { parse_mode: 'Markdown' });
+      await ctx.reply(
+        `${i + 1}. ${CATEGORY_LABELS[p.category] || p.category}\n` +
+        `*${p.name}* — ${distStr}` +
+        ratingStr +
+        descStr,
+        {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [Markup.button.url('🗺️ Build route here', routeUrl)],
+          ]),
+        }
+      );
+    }
   } catch (err) {
     console.error('Find nearby failed:', err);
     await ctx.reply('Failed to look up points. Please try again later.');
