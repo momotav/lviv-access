@@ -36,4 +36,47 @@ app.use('/api/route', routeRouter);
 // ============================================================
 // Telegram bot wiring
 // ============================================================
-const botToken = process.env.TELEGR
+const botToken = process.env.TELEGRAM_BOT_TOKEN;
+let bot = null;
+
+if (botToken) {
+  try {
+    bot = createBot(botToken);
+    app.use('/api/bot', createBotRouter(bot));
+    console.log('🤖 Telegram bot wired at /api/bot/webhook');
+  } catch (err) {
+    console.error('Failed to initialize Telegram bot:', err.message);
+  }
+} else {
+  console.warn('TELEGRAM_BOT_TOKEN not set — bot disabled');
+}
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error('Error:', err);
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal server error',
+  });
+});
+
+// Start HTTP server FIRST, then DB and webhook in background
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Server listening on 0.0.0.0:${PORT}`);
+});
+
+initDb().catch((err) => {
+  console.error('⚠️ Database init failed:', err.message);
+});
+
+// Register webhook with Telegram once we know our public URL
+if (bot && process.env.PUBLIC_URL) {
+  const webhookUrl = `${process.env.PUBLIC_URL}/api/bot/webhook`;
+  bot.telegram
+    .setWebhook(webhookUrl)
+    .then(() => console.log(`✅ Telegram webhook registered: ${webhookUrl}`))
+    .catch((err) => console.error('⚠️ Failed to register webhook:', err.message));
+}
+
+// Graceful shutdown
+process.once('SIGINT', () => bot?.stop('SIGINT'));
+process.once('SIGTERM', () => bot?.stop('SIGTERM'));
