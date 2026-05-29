@@ -2,13 +2,11 @@ import React, { useEffect, useState, useCallback } from 'react';
 import Sidebar from './components/Sidebar.jsx';
 import MapView from './components/MapView.jsx';
 import AddPointModal from './components/AddPointModal.jsx';
+import AuthModal from './components/AuthModal.jsx';
+import PointDetails from './components/PointDetails.jsx';
 import { CATEGORY_LIST } from './lib/categories.jsx';
-import { api } from './lib/api.js';
+import { api, getToken, setToken } from './lib/api.js';
 
-/**
- * Parse "lat,lng" string from URL query into { lat, lng } object.
- * Returns null if the value is missing or malformed.
- */
 function parseLatLng(str) {
   if (!str) return null;
   const parts = str.split(',').map((s) => parseFloat(s.trim()));
@@ -24,12 +22,19 @@ export default function App() {
   const [activeFilters, setActiveFilters] = useState(CATEGORY_LIST);
   const [error, setError] = useState(null);
 
+  // Auth state
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+
   // Add-point state
   const [addMode, setAddMode] = useState(false);
   const [pendingCoords, setPendingCoords] = useState(null);
 
-  // Routing state — initialised from URL query if present
-  const [routingMode, setRoutingMode] = useState(null); // null | 'from' | 'to'
+  // Selected point (for the details side panel)
+  const [selectedPointId, setSelectedPointId] = useState(null);
+
+  // Routing state — from URL if present
+  const [routingMode, setRoutingMode] = useState(null);
   const [routeFrom, setRouteFrom] = useState(() => {
     if (typeof window === 'undefined') return null;
     return parseLatLng(new URLSearchParams(window.location.search).get('from'));
@@ -43,8 +48,7 @@ export default function App() {
   const [routeError, setRouteError] = useState(null);
   const [routeLoading, setRouteLoading] = useState(false);
 
-  // Clean the URL query string after we've read from it, so reloads don't
-  // surprise the user with the same route always pre-filled.
+  // Clean URL query
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
@@ -54,24 +58,36 @@ export default function App() {
     }
   }, []);
 
+  // Load current user if a token exists
   useEffect(() => {
-    let mounted = true;
+    if (getToken()) {
+      api.me()
+        .then((data) => setCurrentUser(data.user))
+        .catch(() => {
+          setToken(null);
+          setCurrentUser(null);
+        });
+    }
+  }, []);
+
+  // Load points
+  const loadPoints = useCallback(() => {
+    setLoading(true);
     api.listPoints()
       .then((data) => {
-        if (mounted) {
-          setPoints(data);
-          setLoading(false);
-        }
+        setPoints(data);
+        setLoading(false);
       })
       .catch((err) => {
         console.error(err);
-        if (mounted) {
-          setError('Could not connect to the server. Is the backend running?');
-          setLoading(false);
-        }
+        setError('Could not connect to the server. Is the backend running?');
+        setLoading(false);
       });
-    return () => { mounted = false; };
   }, []);
+
+  useEffect(() => {
+    loadPoints();
+  }, [loadPoints]);
 
   const toggleFilter = useCallback((cat) => {
     setActiveFilters((prev) =>
@@ -79,19 +95,29 @@ export default function App() {
     );
   }, []);
 
-  // When user enters add-mode, exit any routing mode
-  const handleSetAddMode = useCallback((val) => {
-    setAddMode(val);
-    if (val) setRoutingMode(null);
-  }, []);
+  // Add-point button — gated by login
+  const handleAddClicked = useCallback(() => {
+    if (addMode) {
+      setAddMode(false);
+      return;
+    }
+    if (!currentUser) {
+      setAuthModalOpen(true);
+      return;
+    }
+    setAddMode(true);
+    setRoutingMode(null);
+    setSelectedPointId(null);
+  }, [addMode, currentUser]);
 
-  // When user enters routing-mode, exit add-mode
   const handleSetRoutingMode = useCallback((mode) => {
     setRoutingMode(mode);
-    if (mode) setAddMode(false);
+    if (mode) {
+      setAddMode(false);
+      setSelectedPointId(null);
+    }
   }, []);
 
-  // Map clicks: dispatch to the right handler depending on mode
   const handleMapClick = useCallback((latlng) => {
     if (addMode) {
       setPendingCoords({ lat: latlng.lat, lng: latlng.lng });
@@ -105,19 +131,20 @@ export default function App() {
     }
   }, [addMode, routingMode]);
 
+  const handlePointClick = useCallback((point) => {
+    if (addMode || routingMode) return; // map is in another mode
+    setSelectedPointId(point.id);
+  }, [addMode, routingMode]);
+
   const handleSubmitPoint = useCallback(async (data) => {
     const newPoint = await api.createPoint(data);
     setPoints((prev) => [newPoint, ...prev]);
     setPendingCoords(null);
   }, []);
 
-  const handleDeletePoint = useCallback(async (id) => {
-    try {
-      await api.deletePoint(id);
-      setPoints((prev) => prev.filter((p) => p.id !== id));
-    } catch (err) {
-      alert('Failed to delete: ' + err.message);
-    }
+  const handlePointDeleted = useCallback((id) => {
+    setPoints((prev) => prev.filter((p) => p.id !== id));
+    setSelectedPointId(null);
   }, []);
 
   const handleComputeRoute = useCallback(async () => {
@@ -152,7 +179,22 @@ export default function App() {
     setRoutingMode(null);
   }, []);
 
+  const handleLogout = useCallback(() => {
+    setToken(null);
+    setCurrentUser(null);
+  }, []);
+
+  const handleAuthenticated = useCallback((user) => {
+    setCurrentUser(user);
+    setAuthModalOpen(false);
+    // Refresh points so any "my reviews" attribution is correct
+    loadPoints();
+  }, [loadPoints]);
+
   const visiblePoints = points.filter((p) => activeFilters.includes(p.category));
+  const selectedPoint = selectedPointId
+    ? points.find((p) => p.id === selectedPointId)
+    : null;
 
   return (
     <div className="app">
@@ -161,7 +203,7 @@ export default function App() {
         activeFilters={activeFilters}
         toggleFilter={toggleFilter}
         addMode={addMode}
-        setAddMode={handleSetAddMode}
+        setAddMode={setAddMode}
         routingMode={routingMode}
         setRoutingMode={handleSetRoutingMode}
         routeFrom={routeFrom}
@@ -175,6 +217,10 @@ export default function App() {
         routeData={routeData}
         routeError={routeError}
         routeLoading={routeLoading}
+        currentUser={currentUser}
+        onRequestLogin={() => setAuthModalOpen(true)}
+        onLogout={handleLogout}
+        onAddClicked={handleAddClicked}
       />
 
       <div style={{ position: 'relative', overflow: 'hidden' }}>
@@ -190,11 +236,21 @@ export default function App() {
             addMode={addMode}
             routingMode={routingMode}
             onMapClick={handleMapClick}
-            onDeletePoint={handleDeletePoint}
+            onPointClick={handlePointClick}
             cancelInteraction={cancelInteraction}
             routeFrom={routeFrom}
             routeTo={routeTo}
             routeData={routeData}
+          />
+        )}
+
+        {selectedPoint && (
+          <PointDetails
+            point={selectedPoint}
+            currentUser={currentUser}
+            onClose={() => setSelectedPointId(null)}
+            onDeleted={handlePointDeleted}
+            onRequestLogin={() => setAuthModalOpen(true)}
           />
         )}
       </div>
@@ -204,6 +260,13 @@ export default function App() {
           coords={pendingCoords}
           onClose={() => setPendingCoords(null)}
           onSubmit={handleSubmitPoint}
+        />
+      )}
+
+      {authModalOpen && (
+        <AuthModal
+          onClose={() => setAuthModalOpen(false)}
+          onAuthenticated={handleAuthenticated}
         />
       )}
     </div>
