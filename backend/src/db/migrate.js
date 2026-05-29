@@ -1,6 +1,9 @@
 import { pool } from './pool.js';
 
 const SCHEMA = `
+-- ====================================================================
+-- POINTS — existing table, with new columns
+-- ====================================================================
 CREATE TABLE IF NOT EXISTS points (
   id SERIAL PRIMARY KEY,
   category VARCHAR(50) NOT NULL,
@@ -15,10 +18,57 @@ CREATE TABLE IF NOT EXISTS points (
 
 CREATE INDEX IF NOT EXISTS idx_points_category ON points (category);
 CREATE INDEX IF NOT EXISTS idx_points_lat_lng ON points (lat, lng);
+
+-- Add created_by column to existing points table (idempotent)
+ALTER TABLE points ADD COLUMN IF NOT EXISTS created_by_web_user INTEGER;
+ALTER TABLE points ADD COLUMN IF NOT EXISTS created_by_telegram BIGINT;
+
+-- ====================================================================
+-- WEB USERS — email + password registration
+-- ====================================================================
+CREATE TABLE IF NOT EXISTS web_users (
+  id            SERIAL PRIMARY KEY,
+  email         VARCHAR(200) UNIQUE NOT NULL,
+  password_hash VARCHAR(255)        NOT NULL,
+  display_name  VARCHAR(100)        NOT NULL,
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_web_users_email ON web_users (email);
+
+-- ====================================================================
+-- REVIEWS — one per (user, point), edits replace
+-- ====================================================================
+CREATE TABLE IF NOT EXISTS reviews (
+  id           SERIAL PRIMARY KEY,
+  point_id     INTEGER NOT NULL REFERENCES points(id) ON DELETE CASCADE,
+  user_id      INTEGER NOT NULL REFERENCES web_users(id) ON DELETE CASCADE,
+  rating       SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  comment      TEXT,
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (point_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_reviews_point ON reviews (point_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_user  ON reviews (user_id);
+
+-- ====================================================================
+-- PHOTOS — multiple per point
+-- ====================================================================
+CREATE TABLE IF NOT EXISTS photos (
+  id              SERIAL PRIMARY KEY,
+  point_id        INTEGER NOT NULL REFERENCES points(id) ON DELETE CASCADE,
+  url             VARCHAR(500) NOT NULL,
+  uploaded_by_web INTEGER REFERENCES web_users(id) ON DELETE SET NULL,
+  uploaded_by_tg  BIGINT,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_photos_point ON photos (point_id);
 `;
 
 const SEED_DATA = [
-  // Centered around Rynok Square, Lviv (49.8419, 24.0315)
   ['ramp', 'Ramp at Lviv Opera House', 'Permanent ramp at the main entrance', 49.8443, 24.0265, 5],
   ['ramp', 'Ramp at Pototsky Palace', 'Side entrance accessible ramp', 49.8395, 24.0224, 4],
   ['ramp', 'Ramp at Halytska Bookshop', 'Small portable ramp on request', 49.8418, 24.0313, 3],
@@ -43,7 +93,7 @@ export async function initDb() {
     await client.query('BEGIN');
     await client.query(SCHEMA);
 
-    // Seed only if table is empty
+    // Seed only if points table is empty
     const { rows } = await client.query('SELECT COUNT(*) FROM points');
     if (parseInt(rows[0].count, 10) === 0) {
       console.log('Seeding initial data...');
@@ -67,7 +117,6 @@ export async function initDb() {
   }
 }
 
-// Allow running directly: node src/db/migrate.js
 if (import.meta.url === `file://${process.argv[1]}`) {
   initDb()
     .then(() => process.exit(0))
