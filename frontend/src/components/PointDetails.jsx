@@ -2,14 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { CATEGORIES, CategoryIcon } from '../lib/categories.jsx';
 import { api } from '../lib/api.js';
 
-function StarRow({ value, max = 5, size = 16 }) {
+function StarRow({ value, max = 5, size = 14 }) {
   return (
-    <span className="star-row">
+    <span className="star-row" style={{ display: 'inline-flex', gap: 2 }}>
       {Array.from({ length: max }).map((_, i) => (
         <span
           key={i}
           className={i < value ? '' : 'empty'}
-          style={{ fontSize: size }}
+          style={{ fontSize: size, lineHeight: 1 }}
         >★</span>
       ))}
     </span>
@@ -19,7 +19,7 @@ function StarRow({ value, max = 5, size = 16 }) {
 function formatDate(s) {
   try {
     const d = new Date(s);
-    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    return d.toLocaleDateString('uk-UA', { year: 'numeric', month: 'short', day: 'numeric' });
   } catch {
     return s;
   }
@@ -36,14 +36,12 @@ export default function PointDetails({
   const [myReviewId, setMyReviewId] = useState(null);
   const [loadingReviews, setLoadingReviews] = useState(true);
 
-  // Review form state
   const [showForm, setShowForm] = useState(false);
   const [formRating, setFormRating] = useState(0);
   const [formComment, setFormComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
-  // Lightbox
   const [lightboxIdx, setLightboxIdx] = useState(null);
 
   const loadReviews = useCallback(async () => {
@@ -69,9 +67,7 @@ export default function PointDetails({
     }
   }, [point.id]);
 
-  useEffect(() => {
-    loadReviews();
-  }, [loadReviews]);
+  useEffect(() => { loadReviews(); }, [loadReviews]);
 
   async function submitReview() {
     if (!currentUser) {
@@ -79,7 +75,7 @@ export default function PointDetails({
       return;
     }
     if (formRating < 1 || formRating > 5) {
-      setError('Please give a star rating');
+      setError('Поставте оцінку');
       return;
     }
     setSubmitting(true);
@@ -92,14 +88,14 @@ export default function PointDetails({
       setShowForm(false);
       await loadReviews();
     } catch (err) {
-      setError(err.message || 'Failed to save review');
+      setError(err.message || 'Не вдалося зберегти відгук');
     } finally {
       setSubmitting(false);
     }
   }
 
   async function deleteMyReview() {
-    if (!confirm('Delete your review?')) return;
+    if (!confirm('Видалити ваш відгук?')) return;
     try {
       await api.deleteReview(point.id, myReviewId);
       setShowForm(false);
@@ -107,12 +103,12 @@ export default function PointDetails({
       setFormComment('');
       await loadReviews();
     } catch (err) {
-      alert('Failed to delete: ' + err.message);
+      alert('Не вдалося видалити: ' + err.message);
     }
   }
 
   async function handleDeletePoint() {
-    if (!confirm('Remove this point? This cannot be undone.')) return;
+    if (!confirm('Видалити цю точку? Цю дію неможливо скасувати.')) return;
     try {
       await api.deletePoint(point.id);
       onDeleted(point.id);
@@ -128,9 +124,15 @@ export default function PointDetails({
     ? Number(point.accessibility_rating).toFixed(1).replace(/\.0$/, '')
     : null;
 
+  function pluralReviews(n) {
+    if (n === 1) return '1 відгук';
+    if (n >= 2 && n <= 4) return `${n} відгуки`;
+    return `${n} відгуків`;
+  }
+
   return (
     <div className="details-panel">
-      <button className="details-close" onClick={onClose} aria-label="Close">✕</button>
+      <button className="details-close" onClick={onClose} aria-label="Закрити">✕</button>
 
       <div className="details-header">
         <div className="details-eyebrow">
@@ -140,12 +142,10 @@ export default function PointDetails({
         <h2 className="details-title">{point.name}</h2>
         {ratingDisplay && (
           <div className="details-rating">
-            <StarRow value={Math.round(point.accessibility_rating)} size={18} />
+            <StarRow value={Math.round(point.accessibility_rating)} size={16} />
             <span className="details-rating-num">{ratingDisplay}</span>
             {point.review_count > 0 && (
-              <span className="details-rating-count">
-                · {point.review_count} review{point.review_count > 1 ? 's' : ''}
-              </span>
+              <span className="details-rating-count">· {pluralReviews(point.review_count)}</span>
             )}
           </div>
         )}
@@ -160,7 +160,7 @@ export default function PointDetails({
 
         {point.photo_urls && point.photo_urls.length > 0 && (
           <div className="details-section">
-            <div className="details-section-label">Photos</div>
+            <div className="details-section-label">Фото</div>
             <div className="photo-strip">
               {point.photo_urls.map((url, i) => (
                 <button
@@ -168,7 +168,7 @@ export default function PointDetails({
                   className="photo-strip-item"
                   onClick={() => setLightboxIdx(i)}
                 >
-                  <img src={url} alt={`Photo ${i + 1}`} />
+                  <img src={url} alt={`Фото ${i + 1}`} />
                 </button>
               ))}
             </div>
@@ -176,12 +176,12 @@ export default function PointDetails({
         )}
 
         <div className="details-section">
-          <div className="details-section-label">Reviews</div>
+          <div className="details-section-label">Відгуки</div>
 
           {loadingReviews ? (
-            <div className="details-loading">Loading…</div>
+            <div className="details-loading">Завантаження…</div>
           ) : reviews.length === 0 ? (
-            <div className="details-empty">No reviews yet. Be the first.</div>
+            <div className="details-empty">Поки що немає відгуків. Будьте першим.</div>
           ) : (
             <div className="reviews-list">
               {reviews.map((r) => (
@@ -205,14 +205,14 @@ export default function PointDetails({
                 setShowForm(true);
               }}
             >
-              {myReviewId ? '✎ Edit your review' : '+ Write a review'}
+              {myReviewId ? 'Редагувати ваш відгук' : '+ Залишити відгук'}
             </button>
           )}
 
           {showForm && (
             <div className="review-form">
               {error && <div className="error-msg">{error}</div>}
-              <label className="field-label">Your rating</label>
+              <label className="field-label">Ваша оцінка</label>
               <div className="rating-stars" style={{ marginBottom: 10 }}>
                 {[1, 2, 3, 4, 5].map((n) => (
                   <button
@@ -224,12 +224,12 @@ export default function PointDetails({
                   >★</button>
                 ))}
               </div>
-              <label className="field-label">Comment (optional)</label>
+              <label className="field-label">Коментар (необов'язково)</label>
               <textarea
                 className="field-textarea"
                 value={formComment}
                 onChange={(e) => setFormComment(e.target.value)}
-                placeholder="Describe your experience with this location's accessibility."
+                placeholder="Опишіть свій досвід щодо доступності цього місця."
                 maxLength={2000}
               />
               <div className="review-form-actions">
@@ -237,21 +237,21 @@ export default function PointDetails({
                   className="btn btn-ghost"
                   onClick={() => { setShowForm(false); setError(null); }}
                   disabled={submitting}
-                >Cancel</button>
+                >Скасувати</button>
                 {myReviewId && (
                   <button
                     className="btn btn-ghost"
                     onClick={deleteMyReview}
                     disabled={submitting}
-                    style={{ color: 'var(--accent)' }}
-                  >Delete</button>
+                    style={{ color: 'var(--danger)' }}
+                  >Видалити</button>
                 )}
                 <button
                   className="btn btn-primary"
                   onClick={submitReview}
                   disabled={submitting || formRating < 1}
                 >
-                  {submitting ? 'Saving…' : (myReviewId ? 'Update' : 'Submit')}
+                  {submitting ? 'Зберігаю…' : (myReviewId ? 'Оновити' : 'Опублікувати')}
                 </button>
               </div>
             </div>
@@ -262,9 +262,9 @@ export default function PointDetails({
           <div className="details-section">
             <button
               className="btn-link"
-              style={{ color: 'var(--accent)' }}
+              style={{ color: 'var(--danger)' }}
               onClick={handleDeletePoint}
-            >Remove this point</button>
+            >Видалити цю точку</button>
           </div>
         )}
       </div>
@@ -274,7 +274,7 @@ export default function PointDetails({
           <button
             className="lightbox-close"
             onClick={(e) => { e.stopPropagation(); setLightboxIdx(null); }}
-            aria-label="Close"
+            aria-label="Закрити"
           >✕</button>
           <img
             src={point.photo_urls[lightboxIdx]}
