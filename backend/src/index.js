@@ -4,6 +4,8 @@ console.log('PORT env:', process.env.PORT);
 console.log('DATABASE_URL set:', !!process.env.DATABASE_URL);
 console.log('ORS_API_KEY set:', !!process.env.ORS_API_KEY);
 console.log('TELEGRAM_BOT_TOKEN set:', !!process.env.TELEGRAM_BOT_TOKEN);
+console.log('JWT_SECRET set:', !!process.env.JWT_SECRET);
+console.log('CLOUDINARY_CLOUD_NAME set:', !!process.env.CLOUDINARY_CLOUD_NAME);
 console.log('NODE_ENV:', process.env.NODE_ENV);
 
 import express from 'express';
@@ -14,6 +16,9 @@ dotenv.config();
 
 import pointsRouter from './routes/points.js';
 import routeRouter from './routes/route.js';
+import authRouter from './routes/auth.js';
+import reviewsRouter from './routes/reviews.js';
+import photosRouter from './routes/photos.js';
 import { createBotRouter } from './routes/bot.js';
 import { initDb } from './db/migrate.js';
 import { createBot } from './services/bot.js';
@@ -30,8 +35,12 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+app.use('/api/auth', authRouter);
 app.use('/api/points', pointsRouter);
+app.use('/api/points', reviewsRouter);   // mounts /:pointId/reviews
 app.use('/api/route', routeRouter);
+app.use('/api/photos', photosRouter);    // signing endpoint
+app.use('/api', photosRouter);           // attach-to-existing-point: /points/:id/photos
 
 // ============================================================
 // Telegram bot wiring
@@ -51,7 +60,6 @@ if (botToken) {
   console.warn('TELEGRAM_BOT_TOKEN not set — bot disabled');
 }
 
-// Error handler
 app.use((err, req, res, next) => {
   console.error('Error:', err);
   res.status(err.status || 500).json({
@@ -59,7 +67,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start HTTP server FIRST, then DB and webhook in background
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Server listening on 0.0.0.0:${PORT}`);
 });
@@ -68,7 +75,6 @@ initDb().catch((err) => {
   console.error('⚠️ Database init failed:', err.message);
 });
 
-// Register webhook with Telegram once we know our public URL
 if (bot && process.env.PUBLIC_URL) {
   const webhookUrl = `${process.env.PUBLIC_URL}/api/bot/webhook`;
   bot.telegram
@@ -77,6 +83,5 @@ if (bot && process.env.PUBLIC_URL) {
     .catch((err) => console.error('⚠️ Failed to register webhook:', err.message));
 }
 
-// Graceful shutdown
 process.once('SIGINT', () => bot?.stop('SIGINT'));
 process.once('SIGTERM', () => bot?.stop('SIGTERM'));
