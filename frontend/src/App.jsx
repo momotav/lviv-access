@@ -22,18 +22,14 @@ export default function App() {
   const [activeFilters, setActiveFilters] = useState(CATEGORY_LIST);
   const [error, setError] = useState(null);
 
-  // Auth state
   const [currentUser, setCurrentUser] = useState(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
 
-  // Add-point state
   const [addMode, setAddMode] = useState(false);
   const [pendingCoords, setPendingCoords] = useState(null);
 
-  // Selected point (for the details side panel)
   const [selectedPointId, setSelectedPointId] = useState(null);
 
-  // Routing state — from URL if present
   const [routingMode, setRoutingMode] = useState(null);
   const [routeFrom, setRouteFrom] = useState(() => {
     if (typeof window === 'undefined') return null;
@@ -48,7 +44,6 @@ export default function App() {
   const [routeError, setRouteError] = useState(null);
   const [routeLoading, setRouteLoading] = useState(false);
 
-  // Clean URL query
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
@@ -58,7 +53,6 @@ export default function App() {
     }
   }, []);
 
-  // Load current user if a token exists
   useEffect(() => {
     if (getToken()) {
       api.me()
@@ -70,7 +64,6 @@ export default function App() {
     }
   }, []);
 
-  // Load points
   const loadPoints = useCallback(() => {
     setLoading(true);
     api.listPoints()
@@ -80,7 +73,7 @@ export default function App() {
       })
       .catch((err) => {
         console.error(err);
-        setError('Could not connect to the server. Is the backend running?');
+        setError('Не вдалося з\'єднатися із сервером. Перевірте підключення.');
         setLoading(false);
       });
   }, []);
@@ -95,7 +88,6 @@ export default function App() {
     );
   }, []);
 
-  // Add-point button — gated by login
   const handleAddClicked = useCallback(() => {
     if (addMode) {
       setAddMode(false);
@@ -132,7 +124,7 @@ export default function App() {
   }, [addMode, routingMode]);
 
   const handlePointClick = useCallback((point) => {
-    if (addMode || routingMode) return; // map is in another mode
+    if (addMode || routingMode) return;
     setSelectedPointId(point.id);
   }, [addMode, routingMode]);
 
@@ -160,7 +152,7 @@ export default function App() {
       });
       setRouteData(data);
     } catch (err) {
-      setRouteError(err.message || 'Failed to compute route');
+      setRouteError(err.message || 'Не вдалося побудувати маршрут');
     } finally {
       setRouteLoading(false);
     }
@@ -187,7 +179,6 @@ export default function App() {
   const handleAuthenticated = useCallback((user) => {
     setCurrentUser(user);
     setAuthModalOpen(false);
-    // Refresh points so any "my reviews" attribution is correct
     loadPoints();
   }, [loadPoints]);
 
@@ -224,9 +215,9 @@ export default function App() {
       />
 
       <div style={{ position: 'relative', overflow: 'hidden' }}>
-        {loading && <div className="loading">Loading map data…</div>}
+        {loading && <div className="loading">Завантаження карти…</div>}
         {error && (
-          <div className="loading" style={{ color: 'var(--accent)', textAlign: 'center', maxWidth: 400 }}>
+          <div className="loading" style={{ color: 'var(--danger)', textAlign: 'center', maxWidth: 400 }}>
             {error}
           </div>
         )}
