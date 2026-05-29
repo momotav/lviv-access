@@ -1,17 +1,17 @@
 import React from 'react';
-import { CATEGORIES, CategoryIcon } from '../lib/categories.jsx';
+import { CategoryIcon } from '../lib/categories.jsx';
 
 function formatDistance(m) {
-  if (m < 1000) return `${Math.round(m)} m`;
-  return `${(m / 1000).toFixed(1)} km`;
+  if (m < 1000) return `${Math.round(m)} м`;
+  return `${(m / 1000).toFixed(1)} км`;
 }
 
 function formatDuration(s) {
-  if (s < 60) return `${Math.round(s)} sec`;
-  if (s < 3600) return `${Math.round(s / 60)} min`;
+  if (s < 60) return `${Math.round(s)} с`;
+  if (s < 3600) return `${Math.round(s / 60)} хв`;
   const h = Math.floor(s / 3600);
   const m = Math.round((s % 3600) / 60);
-  return `${h}h ${m}m`;
+  return `${h} год ${m} хв`;
 }
 
 export default function RoutingPanel({
@@ -33,10 +33,9 @@ export default function RoutingPanel({
 
   return (
     <div>
-      <div className="section-label">Plan a route</div>
+      <div className="section-label">Прокласти маршрут</div>
 
       <div className="route-pickers">
-        {/* FROM */}
         <button
           className="route-picker"
           data-active={routingMode === 'from'}
@@ -48,8 +47,8 @@ export default function RoutingPanel({
             {routeFrom
               ? `${routeFrom.lat.toFixed(4)}, ${routeFrom.lng.toFixed(4)}`
               : routingMode === 'from'
-              ? 'Click on the map…'
-              : 'Set start point'}
+              ? 'Клацніть на карті…'
+              : 'Точка відправлення'}
           </span>
           {routeFrom && (
             <span
@@ -64,7 +63,6 @@ export default function RoutingPanel({
           )}
         </button>
 
-        {/* TO */}
         <button
           className="route-picker"
           data-active={routingMode === 'to'}
@@ -76,8 +74,8 @@ export default function RoutingPanel({
             {routeTo
               ? `${routeTo.lat.toFixed(4)}, ${routeTo.lng.toFixed(4)}`
               : routingMode === 'to'
-              ? 'Click on the map…'
-              : 'Set destination'}
+              ? 'Клацніть на карті…'
+              : 'Точка призначення'}
           </span>
           {routeTo && (
             <span
@@ -93,7 +91,7 @@ export default function RoutingPanel({
         </button>
       </div>
 
-      <div className="section-label" style={{ marginTop: 18 }}>Stop along the way</div>
+      <div className="section-label" style={{ marginTop: 14 }}>Зупинка по дорозі</div>
 
       <div className="waypoint-options">
         <button
@@ -101,8 +99,12 @@ export default function RoutingPanel({
           data-active={waypointType === null}
           onClick={() => setWaypointType(null)}
         >
-          <span className="waypoint-option-icon">∅</span>
-          <span>None — direct</span>
+          <span className="waypoint-option-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+          </span>
+          <span>Без зупинки</span>
         </button>
         <button
           className="waypoint-option"
@@ -110,9 +112,9 @@ export default function RoutingPanel({
           onClick={() => setWaypointType('toilet')}
         >
           <span className="waypoint-option-icon">
-            <CategoryIcon category="toilet" size={18} />
+            <CategoryIcon category="toilet" size={16} />
           </span>
-          <span>Accessible WC</span>
+          <span>Доступний туалет</span>
         </button>
         <button
           className="waypoint-option"
@@ -120,9 +122,9 @@ export default function RoutingPanel({
           onClick={() => setWaypointType('charging')}
         >
           <span className="waypoint-option-icon">
-            <CategoryIcon category="charging" size={18} />
+            <CategoryIcon category="charging" size={16} />
           </span>
-          <span>Charging point</span>
+          <span>Зарядна станція</span>
         </button>
       </div>
 
@@ -131,7 +133,22 @@ export default function RoutingPanel({
         disabled={!canCompute}
         onClick={onComputeRoute}
       >
-        {routeLoading ? 'Computing…' : '→  Compute route'}
+        {routeLoading ? (
+          <>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: 'spin 0.8s linear infinite' }}>
+              <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+            </svg>
+            Обчислення…
+          </>
+        ) : (
+          <>
+            Побудувати маршрут
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"/>
+              <polyline points="12 5 19 12 12 19"/>
+            </svg>
+          </>
+        )}
       </button>
 
       {routeError && <div className="error-msg" style={{ marginTop: 12 }}>{routeError}</div>}
@@ -139,16 +156,16 @@ export default function RoutingPanel({
       {routeData && (
         <div className="route-summary">
           <div className="route-summary-row">
-            <span className="route-summary-label">Distance</span>
+            <span className="route-summary-label">Відстань</span>
             <span className="route-summary-value">{formatDistance(routeData.distance_m)}</span>
           </div>
           <div className="route-summary-row">
-            <span className="route-summary-label">Duration</span>
+            <span className="route-summary-label">Тривалість</span>
             <span className="route-summary-value">{formatDuration(routeData.duration_s)}</span>
           </div>
           {routeData.waypoint && (
             <div className="route-summary-waypoint">
-              <div className="route-summary-eyebrow">Stop inserted</div>
+              <div className="route-summary-eyebrow">Зупинка на маршруті</div>
               <div className="route-summary-waypoint-name">
                 <CategoryIcon category={routeData.waypoint.category} size={16} />
                 <span>{routeData.waypoint.name}</span>
@@ -157,15 +174,16 @@ export default function RoutingPanel({
           )}
           {routeData.requestedWaypointType && !routeData.waypoint && (
             <div className="route-summary-warning">
-              No suitable {routeData.requestedWaypointType} found near this route.
-              Showing direct path.
+              Поблизу цього маршруту не знайдено відповідної зупинки. Показаний прямий маршрут.
             </div>
           )}
           <button className="route-clear-btn" onClick={onClearRoute}>
-            Clear route
+            Очистити маршрут
           </button>
         </div>
       )}
+
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
