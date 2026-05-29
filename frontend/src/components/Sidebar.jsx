@@ -8,7 +8,6 @@ export default function Sidebar({
   toggleFilter,
   addMode,
   setAddMode,
-  // routing props
   routingMode,
   setRoutingMode,
   routeFrom,
@@ -22,6 +21,10 @@ export default function Sidebar({
   routeData,
   routeError,
   routeLoading,
+  currentUser,
+  onRequestLogin,
+  onLogout,
+  onAddClicked,
 }) {
   const counts = CATEGORY_LIST.reduce((acc, cat) => {
     acc[cat] = points.filter((p) => p.category === cat).length;
@@ -41,6 +44,23 @@ export default function Sidebar({
             transit — for those who navigate the city differently.
           </p>
         </header>
+
+        <div className="user-pill">
+          {currentUser ? (
+            <>
+              <div className="user-pill-name">
+                <span className="user-pill-dot" />
+                {currentUser.display_name}
+              </div>
+              <button className="user-pill-action" onClick={onLogout}>Sign out</button>
+            </>
+          ) : (
+            <>
+              <div className="user-pill-name user-pill-anon">Anonymous viewer</div>
+              <button className="user-pill-action" onClick={onRequestLogin}>Sign in</button>
+            </>
+          )}
+        </div>
 
         <RoutingPanel
           routingMode={routingMode}
@@ -79,12 +99,14 @@ export default function Sidebar({
         <button
           className="add-button"
           data-active={addMode}
-          onClick={() => setAddMode(!addMode)}
+          onClick={onAddClicked}
         >
           {addMode ? '✕  Cancel' : '+  Mark a Point'}
         </button>
         <div className="add-hint">
-          {addMode ? 'Click anywhere on the map' : ''}
+          {addMode
+            ? 'Click anywhere on the map'
+            : (currentUser ? '' : 'Sign in to contribute')}
         </div>
       </div>
 
