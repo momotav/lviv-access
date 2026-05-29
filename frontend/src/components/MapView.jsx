@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import { CATEGORIES, buildMarkerHtml } from '../lib/categories.jsx';
+import { buildMarkerHtml } from '../lib/categories.jsx';
 
 const LVIV_CENTER = [49.8419, 24.0315];
 const DEFAULT_ZOOM = 15;
@@ -16,7 +16,6 @@ function buildIcon(category) {
   });
 }
 
-// Endpoint markers (A and B)
 function buildEndpointIcon(label, color) {
   const html = `
     <div class="endpoint-pin" style="background:${color}">
@@ -40,21 +39,12 @@ function ClickHandler({ onMapClick, addMode, routingMode }) {
   return null;
 }
 
-function PopupRating({ rating }) {
-  if (!rating) return null;
-  const stars = [];
-  for (let i = 1; i <= 5; i++) {
-    stars.push(<span key={i} className={i <= rating ? '' : 'empty'}>★</span>);
-  }
-  return <div className="popup-rating">{stars}</div>;
-}
-
 export default function MapView({
   points,
   addMode,
   routingMode,
   onMapClick,
-  onDeletePoint,
+  onPointClick,
   cancelInteraction,
   routeFrom,
   routeTo,
@@ -68,7 +58,6 @@ export default function MapView({
     return () => window.removeEventListener('keydown', onKey);
   }, [addMode, routingMode, cancelInteraction]);
 
-  // Convert ORS coords [[lng,lat], ...] to Leaflet [[lat,lng], ...]
   const routePolyline = routeData
     ? routeData.coordinates.map(([lng, lat]) => [lat, lng])
     : null;
@@ -104,45 +93,24 @@ export default function MapView({
         />
         <ClickHandler addMode={addMode} routingMode={routingMode} onMapClick={onMapClick} />
 
-        {/* Route polyline — drawn first so markers sit on top */}
         {routePolyline && (
           <>
-            {/* Subtle outline for legibility */}
-            <Polyline
-              positions={routePolyline}
-              pathOptions={{ color: '#1a1410', weight: 8, opacity: 0.25 }}
-            />
-            {/* Main accent line */}
-            <Polyline
-              positions={routePolyline}
-              pathOptions={{ color: '#b5371b', weight: 5, opacity: 0.95 }}
-            />
+            <Polyline positions={routePolyline} pathOptions={{ color: '#1a1410', weight: 8, opacity: 0.25 }} />
+            <Polyline positions={routePolyline} pathOptions={{ color: '#b5371b', weight: 5, opacity: 0.95 }} />
           </>
         )}
 
-        {/* All accessibility points */}
         {points.map((p) => (
-          <Marker key={p.id} position={[p.lat, p.lng]} icon={buildIcon(p.category)}>
-            <Popup>
-              <div className="popup-category">
-                {CATEGORIES[p.category]?.label || p.category}
-              </div>
-              <h3 className="popup-name">{p.name}</h3>
-              {p.description && <p className="popup-description">{p.description}</p>}
-              <PopupRating rating={p.accessibility_rating} />
-              <button
-                className="popup-delete"
-                onClick={() => {
-                  if (confirm('Remove this point?')) onDeletePoint(p.id);
-                }}
-              >
-                Remove point
-              </button>
-            </Popup>
-          </Marker>
+          <Marker
+            key={p.id}
+            position={[p.lat, p.lng]}
+            icon={buildIcon(p.category)}
+            eventHandlers={{
+              click: () => onPointClick(p),
+            }}
+          />
         ))}
 
-        {/* Endpoint markers */}
         {routeFrom && (
           <Marker
             position={[routeFrom.lat, routeFrom.lng]}
