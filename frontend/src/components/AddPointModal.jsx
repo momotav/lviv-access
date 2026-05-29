@@ -41,7 +41,7 @@ export default function AddPointModal({ coords, onClose, onSubmit }) {
     setPhotoUrls((prev) => [...prev, ...succeeded]);
     setUploadingCount(0);
     if (failed > 0) {
-      setError(`${failed} photo upload(s) failed`);
+      setError(`Не вдалося завантажити ${failed} фото`);
     }
   }
 
@@ -51,7 +51,7 @@ export default function AddPointModal({ coords, onClose, onSubmit }) {
 
   async function handleSubmit() {
     if (!name.trim()) {
-      setError('Name is required');
+      setError('Назва обов\'язкова');
       return;
     }
     setSubmitting(true);
@@ -67,7 +67,7 @@ export default function AddPointModal({ coords, onClose, onSubmit }) {
         photo_urls: photoUrls,
       });
     } catch (err) {
-      setError(err.message || 'Failed to save');
+      setError(err.message || 'Не вдалося зберегти');
       setSubmitting(false);
     }
   }
@@ -75,13 +75,13 @@ export default function AddPointModal({ coords, onClose, onSubmit }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <button className="modal-close" onClick={onClose} aria-label="Close">✕</button>
+        <button className="modal-close" onClick={onClose} aria-label="Закрити">✕</button>
 
         <header className="modal-header">
-          <div className="modal-eyebrow">New entry · Accessibility point</div>
-          <h2 className="modal-title">Mark this location</h2>
+          <div className="modal-eyebrow">Новий об'єкт доступності</div>
+          <h2 className="modal-title">Додати точку на карту</h2>
           <div className="modal-coords">
-            {coords.lat.toFixed(5)}°N, {coords.lng.toFixed(5)}°E
+            {coords.lat.toFixed(5)}° N, {coords.lng.toFixed(5)}° E
           </div>
         </header>
 
@@ -89,7 +89,7 @@ export default function AddPointModal({ coords, onClose, onSubmit }) {
           {error && <div className="error-msg">{error}</div>}
 
           <div className="field">
-            <label className="field-label">Category</label>
+            <label className="field-label">Категорія</label>
             <div className="category-grid">
               {CATEGORY_LIST.map((cat) => (
                 <button
@@ -100,55 +100,55 @@ export default function AddPointModal({ coords, onClose, onSubmit }) {
                   onClick={() => setCategory(cat)}
                 >
                   <CategoryIcon category={cat} size={22} />
-                  <span>{CATEGORIES[cat].label.split(' ')[0]}</span>
+                  <span>{CATEGORIES[cat].shortLabel}</span>
                 </button>
               ))}
             </div>
           </div>
 
           <div className="field">
-            <label className="field-label" htmlFor="point-name">Name</label>
+            <label className="field-label" htmlFor="point-name">Назва</label>
             <input
               id="point-name"
               className="field-input"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Ramp at Lviv Opera House"
+              placeholder="напр., «Пандус біля Львівської опери»"
               maxLength={200}
               autoFocus
             />
           </div>
 
           <div className="field">
-            <label className="field-label" htmlFor="point-desc">Description (optional)</label>
+            <label className="field-label" htmlFor="point-desc">Опис (необов'язково)</label>
             <textarea
               id="point-desc"
               className="field-textarea"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Helpful details — accessibility specifics, hours, conditions…"
+              placeholder="Корисні деталі — особливості доступності, години, умови…"
               maxLength={1000}
             />
           </div>
 
           <div className="field">
-            <label className="field-label">Photos (optional, up to {MAX_PHOTOS})</label>
+            <label className="field-label">Фотографії (необов'язково, до {MAX_PHOTOS})</label>
             <div className="photo-uploader">
               {photoUrls.map((url, i) => (
                 <div key={url} className="photo-thumb">
-                  <img src={url} alt={`upload ${i + 1}`} />
+                  <img src={url} alt={`фото ${i + 1}`} />
                   <button
                     type="button"
                     className="photo-thumb-remove"
                     onClick={() => removePhoto(i)}
-                    aria-label="Remove"
+                    aria-label="Видалити"
                   >✕</button>
                 </div>
               ))}
               {uploadingCount > 0 && (
                 <div className="photo-thumb photo-thumb-loading">
-                  Uploading {uploadingCount}…
+                  Завантажую {uploadingCount}…
                 </div>
               )}
               {photoUrls.length + uploadingCount < MAX_PHOTOS && (
@@ -160,14 +160,14 @@ export default function AddPointModal({ coords, onClose, onSubmit }) {
                     onChange={(e) => handleFiles(e.target.files)}
                     style={{ display: 'none' }}
                   />
-                  <span>+ Add</span>
+                  <span>+ Додати</span>
                 </label>
               )}
             </div>
           </div>
 
           <div className="field">
-            <label className="field-label">Initial accessibility rating (optional)</label>
+            <label className="field-label">Початкова оцінка доступності (необов'язково)</label>
             <div className="rating-stars">
               {[1, 2, 3, 4, 5].map((n) => (
                 <button
@@ -176,7 +176,7 @@ export default function AddPointModal({ coords, onClose, onSubmit }) {
                   className="rating-star"
                   data-filled={n <= rating}
                   onClick={() => setRating(rating === n ? 0 : n)}
-                  aria-label={`Rate ${n} stars`}
+                  aria-label={`Оцінка ${n}`}
                 >★</button>
               ))}
             </div>
@@ -184,13 +184,13 @@ export default function AddPointModal({ coords, onClose, onSubmit }) {
         </div>
 
         <footer className="modal-footer">
-          <button className="btn btn-ghost" onClick={onClose} disabled={submitting}>Cancel</button>
+          <button className="btn btn-ghost" onClick={onClose} disabled={submitting}>Скасувати</button>
           <button
             className="btn btn-primary"
             onClick={handleSubmit}
             disabled={submitting || uploadingCount > 0 || !name.trim()}
           >
-            {submitting ? 'Saving…' : 'Save point'}
+            {submitting ? 'Зберігаю…' : 'Зберегти'}
           </button>
         </footer>
       </div>
