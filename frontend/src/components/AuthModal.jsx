@@ -20,16 +20,16 @@ export default function AuthModal({ initialMode = 'login', onClose, onAuthentica
   async function handleSubmit() {
     setError(null);
     if (!email || !password) {
-      setError('Email and password are required');
+      setError('Введіть email і пароль');
       return;
     }
     if (mode === 'register') {
       if (password.length < 8) {
-        setError('Password must be at least 8 characters');
+        setError('Пароль має містити щонайменше 8 символів');
         return;
       }
       if (!displayName.trim() || displayName.trim().length < 2) {
-        setError('Display name must be at least 2 characters');
+        setError('Ім\'я має містити щонайменше 2 символи');
         return;
       }
     }
@@ -44,7 +44,7 @@ export default function AuthModal({ initialMode = 'login', onClose, onAuthentica
       setToken(result.token);
       onAuthenticated(result.user);
     } catch (err) {
-      setError(err.message || 'Authentication failed');
+      setError(translateAuthError(err.message) || 'Помилка авторизації');
       setSubmitting(false);
     }
   }
@@ -52,11 +52,11 @@ export default function AuthModal({ initialMode = 'login', onClose, onAuthentica
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
-        <button className="modal-close" onClick={onClose} aria-label="Close">✕</button>
+        <button className="modal-close" onClick={onClose} aria-label="Закрити">✕</button>
 
         <header className="modal-header">
-          <div className="modal-eyebrow">{mode === 'login' ? 'Welcome back' : 'Join the atlas'}</div>
-          <h2 className="modal-title">{mode === 'login' ? 'Sign in' : 'Create account'}</h2>
+          <div className="modal-eyebrow">{mode === 'login' ? 'Ласкаво просимо' : 'Створити обліковий запис'}</div>
+          <h2 className="modal-title">{mode === 'login' ? 'Вхід' : 'Реєстрація'}</h2>
         </header>
 
         <div className="modal-body">
@@ -64,14 +64,14 @@ export default function AuthModal({ initialMode = 'login', onClose, onAuthentica
 
           {mode === 'register' && (
             <div className="field">
-              <label className="field-label" htmlFor="auth-name">Display name</label>
+              <label className="field-label" htmlFor="auth-name">Ваше ім'я</label>
               <input
                 id="auth-name"
                 className="field-input"
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="How others will see you"
+                placeholder="Як вас будуть бачити інші"
                 maxLength={100}
               />
             </div>
@@ -91,34 +91,47 @@ export default function AuthModal({ initialMode = 'login', onClose, onAuthentica
           </div>
 
           <div className="field">
-            <label className="field-label" htmlFor="auth-password">Password</label>
+            <label className="field-label" htmlFor="auth-password">Пароль</label>
             <input
               id="auth-password"
               className="field-input"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder={mode === 'register' ? 'At least 8 characters' : ''}
+              placeholder={mode === 'register' ? 'Не менше 8 символів' : ''}
               onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(); }}
             />
           </div>
 
-          <div style={{ marginTop: 16, fontSize: 13, color: 'var(--ink-soft)', textAlign: 'center' }}>
+          <div style={{ marginTop: 16, fontSize: 13, color: 'var(--text-3)', textAlign: 'center' }}>
             {mode === 'login' ? (
-              <>No account yet? <a href="#" onClick={(e) => { e.preventDefault(); setMode('register'); setError(null); }} style={{ color: 'var(--accent)' }}>Sign up</a></>
+              <>Ще немає облікового запису? <a href="#" onClick={(e) => { e.preventDefault(); setMode('register'); setError(null); }} style={{ color: 'var(--primary)', fontWeight: 500 }}>Зареєструватись</a></>
             ) : (
-              <>Already have an account? <a href="#" onClick={(e) => { e.preventDefault(); setMode('login'); setError(null); }} style={{ color: 'var(--accent)' }}>Sign in</a></>
+              <>Вже маєте обліковий запис? <a href="#" onClick={(e) => { e.preventDefault(); setMode('login'); setError(null); }} style={{ color: 'var(--primary)', fontWeight: 500 }}>Увійти</a></>
             )}
           </div>
         </div>
 
         <footer className="modal-footer">
-          <button className="btn btn-ghost" onClick={onClose} disabled={submitting}>Cancel</button>
+          <button className="btn btn-ghost" onClick={onClose} disabled={submitting}>Скасувати</button>
           <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting}>
-            {submitting ? 'Please wait…' : (mode === 'login' ? 'Sign in' : 'Create account')}
+            {submitting ? 'Зачекайте…' : (mode === 'login' ? 'Увійти' : 'Створити')}
           </button>
         </footer>
       </div>
     </div>
   );
+}
+
+function translateAuthError(msg) {
+  if (!msg) return null;
+  const map = {
+    'Valid email required': 'Введіть коректний email',
+    'Password must be at least 8 characters': 'Пароль має містити щонайменше 8 символів',
+    'Display name must be 2-100 characters': 'Ім\'я має містити 2-100 символів',
+    'A user with this email already exists': 'Користувач з цим email вже існує',
+    'Invalid email or password': 'Невірний email або пароль',
+    'Email and password required': 'Введіть email і пароль',
+  };
+  return map[msg] || msg;
 }
