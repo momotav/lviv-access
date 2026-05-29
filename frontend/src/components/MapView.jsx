@@ -10,9 +10,9 @@ function buildIcon(category) {
   return L.divIcon({
     className: 'access-marker',
     html: buildMarkerHtml(category),
-    iconSize: [32, 40],
-    iconAnchor: [16, 38],
-    popupAnchor: [0, -36],
+    iconSize: [28, 36],
+    iconAnchor: [14, 34],
+    popupAnchor: [0, -32],
   });
 }
 
@@ -25,8 +25,8 @@ function buildEndpointIcon(label, color) {
   return L.divIcon({
     className: 'endpoint-marker',
     html,
-    iconSize: [30, 30],
-    iconAnchor: [15, 15],
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
   });
 }
 
@@ -71,9 +71,9 @@ export default function MapView({
     : null;
 
   const overlayMessage = {
-    add: 'Click anywhere on the map to mark a location',
-    'route-from': 'Click on the map to set the start point (A)',
-    'route-to': 'Click on the map to set the destination (B)',
+    add: 'Клацніть на карті, щоб додати точку',
+    'route-from': 'Клацніть на карті — точка А (відправлення)',
+    'route-to': 'Клацніть на карті — точка B (призначення)',
   }[interactionMode];
 
   return (
@@ -81,7 +81,7 @@ export default function MapView({
       {overlayMessage && (
         <div className="map-overlay map-overlay-top">
           <span>{overlayMessage}</span>
-          <button onClick={cancelInteraction}>Cancel</button>
+          <button onClick={cancelInteraction}>Скасувати</button>
         </div>
       )}
       <MapContainer center={LVIV_CENTER} zoom={DEFAULT_ZOOM} className="map" scrollWheelZoom>
@@ -95,8 +95,8 @@ export default function MapView({
 
         {routePolyline && (
           <>
-            <Polyline positions={routePolyline} pathOptions={{ color: '#1a1410', weight: 8, opacity: 0.25 }} />
-            <Polyline positions={routePolyline} pathOptions={{ color: '#b5371b', weight: 5, opacity: 0.95 }} />
+            <Polyline positions={routePolyline} pathOptions={{ color: '#0F4C5C', weight: 8, opacity: 0.25 }} />
+            <Polyline positions={routePolyline} pathOptions={{ color: '#0F4C5C', weight: 5, opacity: 0.95 }} />
           </>
         )}
 
@@ -105,22 +105,20 @@ export default function MapView({
             key={p.id}
             position={[p.lat, p.lng]}
             icon={buildIcon(p.category)}
-            eventHandlers={{
-              click: () => onPointClick(p),
-            }}
+            eventHandlers={{ click: () => onPointClick(p) }}
           />
         ))}
 
         {routeFrom && (
           <Marker
             position={[routeFrom.lat, routeFrom.lng]}
-            icon={buildEndpointIcon('A', '#3e5a3a')}
+            icon={buildEndpointIcon('A', '#0F4C5C')}
           />
         )}
         {routeTo && (
           <Marker
             position={[routeTo.lat, routeTo.lng]}
-            icon={buildEndpointIcon('B', '#b5371b')}
+            icon={buildEndpointIcon('B', '#E27D60')}
           />
         )}
       </MapContainer>
