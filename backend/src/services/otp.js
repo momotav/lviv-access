@@ -118,13 +118,38 @@ function isAccessibleItinerary(itinerary) {
 }
 
 /**
+ * Default planning time for demo / thesis purposes.
+ *
+ * Always plans for the next Tuesday at 12:00 noon Kyiv local time. This
+ * guarantees:
+ *   - a weekday (full transit service, including service_id 31, 63, 159, 191, 255)
+ *   - peak daytime hours (no "no transit at 3 AM" edge case)
+ *   - within the GTFS calendar window (2026-05-29 → 2027-05-29)
+ *
+ * For a future production deployment with mobile location services, this
+ * would default to "now" with an optional date/time picker in the UI.
+ */
+function nextTuesdayNoon() {
+  // Get current date in Kyiv timezone so we compute the right weekday
+  const nowKyiv = new Date(
+    new Date().toLocaleString('en-US', { timeZone: 'Europe/Kyiv' })
+  );
+  const day = nowKyiv.getDay(); // 0=Sun, 1=Mon, 2=Tue, ...
+  const daysUntilTue = ((2 - day + 7) % 7) || 7; // always upcoming, never today
+  const target = new Date(nowKyiv);
+  target.setDate(target.getDate() + daysUntilTue);
+  target.setHours(12, 0, 0, 0);
+  return target;
+}
+
+/**
  * Compute a wheelchair-accessible transit route between two [lng, lat] points.
  *
  * Returns: {
  *   coordinates, distance_m, duration_s, legs, transfers
  * }
  */
-export async function getTransitRoute([fromLngLat, toLngLat], when = new Date()) {
+export async function getTransitRoute([fromLngLat, toLngLat], when = nextTuesdayNoon()) {
   if (!OTP_URL) {
     throw new Error('OTP_URL environment variable is not set');
   }
