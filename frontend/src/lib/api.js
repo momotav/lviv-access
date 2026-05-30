@@ -40,14 +40,12 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  // Auth
   register: (data) =>
     request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   login: (data) =>
     request('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   me: () => request('/auth/me'),
 
-  // Points
   listPoints: (filters = {}) => {
     const params = new URLSearchParams();
     if (filters.category) params.set('category', filters.category);
@@ -60,14 +58,12 @@ export const api = {
   deletePoint: (id) =>
     request(`/points/${id}`, { method: 'DELETE' }),
 
-  // Routes
-  computeRoute: ({ from, to, waypointType }) =>
+  computeRoute: ({ from, to, waypointType, travelMode }) =>
     request('/route', {
       method: 'POST',
-      body: JSON.stringify({ from, to, waypointType }),
+      body: JSON.stringify({ from, to, waypointType, travelMode }),
     }),
 
-  // Reviews
   listReviews: (pointId) => request(`/points/${pointId}/reviews`),
   createOrUpdateReview: (pointId, data) =>
     request(`/points/${pointId}/reviews`, {
@@ -77,15 +73,10 @@ export const api = {
   deleteReview: (pointId, reviewId) =>
     request(`/points/${pointId}/reviews/${reviewId}`, { method: 'DELETE' }),
 
-  // Photos
   getUploadSignature: () =>
     request('/photos/sign', { method: 'POST', body: JSON.stringify({}) }),
 };
 
-/**
- * Upload a single image File to Cloudinary using a signature from our backend.
- * Returns the secure_url string on success.
- */
 export async function uploadImageToCloudinary(file) {
   const sig = await api.getUploadSignature();
   const form = new FormData();
