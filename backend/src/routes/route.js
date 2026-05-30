@@ -1,10 +1,12 @@
 import express from 'express';
 import { getRoute } from '../services/ors.js';
+import { getTransitRoute } from '../services/otp.js';
 import { selectWaypoint } from '../services/waypoint.js';
 
 const router = express.Router();
 
 const VALID_WAYPOINT_TYPES = ['toilet', 'charging'];
+const VALID_TRAVEL_MODES = ['walk', 'transit'];
 
 /**
  * POST /api/route
@@ -12,27 +14,52 @@ const VALID_WAYPOINT_TYPES = ['toilet', 'charging'];
  * Body: {
  *   from: { lat, lng },
  *   to:   { lat, lng },
- *   waypointType?: "toilet" | "charging"   // optional
+ *   travelMode?: "walk" | "transit"        // default: "walk"
+ *   waypointType?: "toilet" | "charging"   // only used in walk mode
  * }
  *
- * Returns: {
- *   coordinates: [[lng, lat], ...],
- *   distance_m: number,
- *   duration_s: number,
- *   waypoint: null | { id, name, category, lat, lng, ... }
- * }
+ * Returns:
+ *   For walk:    { coordinates, distance_m, duration_s, waypoint, requestedWaypointType }
+ *   For transit: { coordinates, distance_m, duration_s, legs, transfers,
+ *                  waypoint: null, requestedWaypointType: null }
  */
-router.post('/', async (req, res, next) => {
+router.post('/', async (req, res) => {
   try {
-    const { from, to, waypointType } = req.body;
+    const { from, to, waypointType, travelMode } = req.body;
 
-    // Validation
+    // Common validation
     if (!from || typeof from.lat !== 'number' || typeof from.lng !== 'number') {
       return res.status(400).json({ error: 'Invalid "from" coordinates' });
     }
     if (!to || typeof to.lat !== 'number' || typeof to.lng !== 'number') {
       return res.status(400).json({ error: 'Invalid "to" coordinates' });
     }
+    const mode = travelMode || 'walk';
+    if (!VALID_TRAVEL_MODES.includes(mode)) {
+      return res.status(400).json({
+        error: `travelMode must be one of: ${VALID_TRAVEL_MODES.join(', ')}`,
+      });
+    }
+
+    // ===== TRANSIT branch =====
+    if (mode === 'transit') {
+      const transit = await getTransitRoute([
+        [from.lng, from.lat],
+        [to.lng, to.lat],
+      ]);
+      return res.json({
+        coordinates: transit.coordinates,
+        distance_m: transit.distance_m,
+        duration_s: transit.duration_s,
+        legs: transit.legs,
+        transfers: transit.transfers,
+        waypoint: null,
+        requestedWaypointType: null,
+        travelMode: 'transit',
+      });
+    }
+
+    // ===== WALK branch (unchanged) =====
     if (waypointType && !VALID_WAYPOINT_TYPES.includes(waypointType)) {
       return res.status(400).json({
         error: `waypointType must be one of: ${VALID_WAYPOINT_TYPES.join(', ')}`,
@@ -62,8 +89,6 @@ router.post('/', async (req, res, next) => {
           [to.lng, to.lat],
         ];
       }
-      // If no waypoint matched, fall back silently to A→B and let the frontend
-      // know via waypoint=null. Frontend can show a warning.
     }
 
     const route = await getRoute(coordinates);
@@ -74,9 +99,9 @@ router.post('/', async (req, res, next) => {
       duration_s: Math.round(route.duration_s),
       waypoint: chosenWaypoint,
       requestedWaypointType: waypointType || null,
+      travelMode: 'walk',
     });
   } catch (err) {
-    // Surface meaningful error messages
     console.error('Route error:', err);
     res.status(500).json({ error: err.message || 'Routing failed' });
   }
