@@ -36,6 +36,8 @@ export default function Sidebar({
   setRouteTo,
   waypointType,
   setWaypointType,
+  travelMode,
+  setTravelMode,
   onComputeRoute,
   onClearRoute,
   routeData,
@@ -92,6 +94,8 @@ export default function Sidebar({
           setRouteTo={setRouteTo}
           waypointType={waypointType}
           setWaypointType={setWaypointType}
+          travelMode={travelMode}
+          setTravelMode={setTravelMode}
           onComputeRoute={onComputeRoute}
           onClearRoute={onClearRoute}
           routeData={routeData}
