@@ -1,13 +1,24 @@
 /**
- * OpenTripPlanner (OTP) client — public-transport routing.
+ * OpenTripPlanner (OTP) client — wheelchair-accessible public-transport routing.
  *
- * Mirrors services/ors.js: takes [lng, lat] endpoints, returns the same
- * shape ({ coordinates, distance_m, duration_s }) PLUS a `legs` array so
- * the frontend can colour walk vs tram/bus segments.
+ * NOTE on accessibility filtering:
  *
- * Requires a running OTP 2.x server with the Lviv GTFS + Lviv OSM graph.
- * Set OTP_URL in env, e.g.
- *   OTP_URL=http://localhost:8080/otp/gtfs/v1
+ * OTP's built-in `wheelchair: true` filter requires both stop-level
+ * (`wheelchair_boarding` in stops.txt) AND trip-level
+ * (`wheelchair_accessible` in trips.txt) GTFS data to be populated.
+ * The Lviv GTFS feed publishes only the latter — there is no
+ * `wheelchair_boarding` column in stops.txt at all. With strict
+ * OTP filtering this returns zero itineraries.
+ *
+ * We instead use a two-stage approach:
+ *   1. Query OTP without the wheelchair flag → get all itineraries
+ *   2. Post-filter: keep only itineraries where every transit leg
+ *      uses one of the routes verified as 100% wheelchair-accessible
+ *      in the official GTFS feed (8 of 72 routes for Lviv as of May 2026).
+ *
+ * This makes the system honest about data limitations while still
+ * delivering working accessibility routing for the routes that ARE
+ * documented as accessible.
  */
 
 const OTP_URL = process.env.OTP_URL;
@@ -19,6 +30,24 @@ const TRANSPORT_MODES = [
   { mode: 'TROLLEYBUS' },
   { mode: 'BUS' },
 ];
+
+/**
+ * Routes verified as 100% wheelchair-accessible in the Lviv GTFS feed
+ * (all trips marked wheelchair_accessible=1 in trips.txt).
+ *
+ * Determined from the May 2026 feed (feed_version 6.43). Update this list
+ * when the GTFS feed is republished with broader accessibility coverage.
+ */
+const ACCESSIBLE_ROUTE_SHORT_NAMES = new Set([
+  'Т08',   // Tram — пл. Соборна ↔ вул. Вернадського
+  'А10',   // Bus — ТРЦ Кінг Кросс ↔ Залізничний вокзал
+  'А41',   // Bus — вул. Сихівська ↔ Галицьке перехрестя
+  'А45',   // Bus — вул. Симоненка ↔ вул. Барвінських
+  'А51',   // Bus — ТЦ Вікторія Гарденс ↔ Галицьке перехрестя
+  'А53',   // Bus — Санта-Барбара ↔ Галицьке перехрестя
+  'А63',   // Bus — вул. Під дубом ↔ с. Воля-Гамулецька
+  'Тр24',  // Trolleybus — Шота Руставелі ↔ Червона Калина
+]);
 
 const PLAN_QUERY = `
   query Plan(
@@ -33,8 +62,7 @@ const PLAN_QUERY = `
       date: $date
       time: $time
       transportModes: $modes
-      wheelchair: true
-      numItineraries: 3
+      numItineraries: 10
     ) {
       itineraries {
         duration
@@ -55,11 +83,10 @@ const PLAN_QUERY = `
 
 /**
  * Format a Date into Europe/Kyiv date and time strings.
- * Container clocks often run UTC, but the GTFS feed is local time, so we
- * must convert explicitly or OTP queries shift 2-3 hours.
+ * Server containers often run UTC, but GTFS is local time — we must
+ * convert explicitly or queries shift by hours.
  */
 function kyivDateTime(when) {
-  // 'sv-SE' locale gives ISO-like "YYYY-MM-DD HH:MM:SS"
   const fmt = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'Europe/Kyiv',
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -75,13 +102,26 @@ function kyivDateTime(when) {
 }
 
 /**
+ * Check whether an itinerary is fully wheelchair-accessible.
+ * An itinerary is accessible iff every transit leg uses a route
+ * in our verified-accessible list. WALK legs are always fine.
+ */
+function isAccessibleItinerary(itinerary) {
+  for (const leg of itinerary.legs) {
+    if (leg.mode === 'WALK') continue;
+    const shortName = leg.route?.shortName;
+    if (!shortName || !ACCESSIBLE_ROUTE_SHORT_NAMES.has(shortName)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Compute a wheelchair-accessible transit route between two [lng, lat] points.
  *
  * Returns: {
- *   coordinates: [[lng,lat], ...],   // full path, flattened (for the existing Polyline)
- *   distance_m, duration_s,
- *   legs: [{ mode, route, from, to, duration_s, coordinates }],
- *   transfers: number
+ *   coordinates, distance_m, duration_s, legs, transfers
  * }
  */
 export async function getTransitRoute([fromLngLat, toLngLat], when = new Date()) {
@@ -103,7 +143,11 @@ export async function getTransitRoute([fromLngLat, toLngLat], when = new Date())
 
   const res = await fetch(OTP_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      // Bypass ngrok-free interstitial in dev
+      'ngrok-skip-browser-warning': 'true',
+    },
     body: JSON.stringify({ query: PLAN_QUERY, variables }),
   });
 
@@ -116,13 +160,23 @@ export async function getTransitRoute([fromLngLat, toLngLat], when = new Date())
     throw new Error(`OTP GraphQL error: ${json.errors[0].message}`);
   }
 
-  const itineraries = json.data?.plan?.itineraries ?? [];
-  if (itineraries.length === 0) {
-    throw new Error('No accessible transit route found between these points');
+  const allItineraries = json.data?.plan?.itineraries ?? [];
+  if (allItineraries.length === 0) {
+    throw new Error('OTP returned no itineraries for these points');
   }
 
-  // Pick fastest
-  const best = itineraries.sort((a, b) => a.duration - b.duration)[0];
+  // Filter to wheelchair-accessible itineraries only
+  const accessible = allItineraries.filter(isAccessibleItinerary);
+
+  if (accessible.length === 0) {
+    throw new Error(
+      'Доступний транспортний маршрут не знайдено між цими точками. ' +
+      'Спробуйте інші точки відправлення/призначення або скористайтесь пішим маршрутом.'
+    );
+  }
+
+  // Pick fastest accessible one
+  const best = accessible.sort((a, b) => a.duration - b.duration)[0];
 
   const legs = best.legs.map((leg) => ({
     mode: leg.mode,
