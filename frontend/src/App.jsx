@@ -40,6 +40,8 @@ export default function App() {
     return parseLatLng(new URLSearchParams(window.location.search).get('to'));
   });
   const [waypointType, setWaypointType] = useState(null);
+  // NEW: walk vs transit
+  const [travelMode, setTravelMode] = useState('walk');
   const [routeData, setRouteData] = useState(null);
   const [routeError, setRouteError] = useState(null);
   const [routeLoading, setRouteLoading] = useState(false);
@@ -148,7 +150,9 @@ export default function App() {
       const data = await api.computeRoute({
         from: routeFrom,
         to: routeTo,
-        waypointType,
+        // Transit ignores the toilet/charging waypoint
+        waypointType: travelMode === 'transit' ? null : waypointType,
+        travelMode,
       });
       setRouteData(data);
     } catch (err) {
@@ -156,7 +160,7 @@ export default function App() {
     } finally {
       setRouteLoading(false);
     }
-  }, [routeFrom, routeTo, waypointType]);
+  }, [routeFrom, routeTo, waypointType, travelMode]);
 
   const handleClearRoute = useCallback(() => {
     setRouteFrom(null);
@@ -164,6 +168,13 @@ export default function App() {
     setRouteData(null);
     setRouteError(null);
     setRoutingMode(null);
+  }, []);
+
+  // Clear any drawn route when the user switches modes
+  const handleSetTravelMode = useCallback((mode) => {
+    setTravelMode(mode);
+    setRouteData(null);
+    setRouteError(null);
   }, []);
 
   const cancelInteraction = useCallback(() => {
@@ -203,6 +214,8 @@ export default function App() {
         setRouteTo={setRouteTo}
         waypointType={waypointType}
         setWaypointType={setWaypointType}
+        travelMode={travelMode}
+        setTravelMode={handleSetTravelMode}
         onComputeRoute={handleComputeRoute}
         onClearRoute={handleClearRoute}
         routeData={routeData}
