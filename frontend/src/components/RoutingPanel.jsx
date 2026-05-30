@@ -14,6 +14,20 @@ function formatDuration(s) {
   return `${h} год ${m} хв`;
 }
 
+const MODE_META = {
+  WALK:       { icon: '🚶', label: 'Пішки' },
+  TRAM:       { icon: '🚊', label: 'Трамвай' },
+  TROLLEYBUS: { icon: '🚎', label: 'Тролейбус' },
+  BUS:        { icon: '🚌', label: 'Автобус' },
+};
+
+function transferLabel(n) {
+  if (n === 0) return 'без пересадок';
+  if (n === 1) return '1 пересадка';
+  if (n >= 2 && n <= 4) return `${n} пересадки`;
+  return `${n} пересадок`;
+}
+
 export default function RoutingPanel({
   routingMode,
   setRoutingMode,
@@ -23,6 +37,8 @@ export default function RoutingPanel({
   setRouteTo,
   waypointType,
   setWaypointType,
+  travelMode,
+  setTravelMode,
   onComputeRoute,
   onClearRoute,
   routeData,
@@ -30,12 +46,42 @@ export default function RoutingPanel({
   routeLoading,
 }) {
   const canCompute = routeFrom && routeTo && !routeLoading;
+  const isTransit = travelMode === 'transit';
 
   return (
     <div>
       <div className="section-label">Прокласти маршрут</div>
 
-      <div className="route-pickers">
+      {/* Travel mode toggle */}
+      <div className="mode-toggle">
+        <button
+          className="mode-toggle-option"
+          data-active={!isTransit}
+          onClick={() => setTravelMode('walk')}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="13" cy="4" r="2"/>
+            <path d="M9 21l3-6 2 3 4 3"/>
+            <path d="M16 11l-4-2-3 5-3 0"/>
+          </svg>
+          <span>Пішки</span>
+        </button>
+        <button
+          className="mode-toggle-option"
+          data-active={isTransit}
+          onClick={() => setTravelMode('transit')}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="4" y="3" width="16" height="14" rx="2"/>
+            <path d="M4 10h16"/>
+            <circle cx="8" cy="19" r="1.5"/>
+            <circle cx="16" cy="19" r="1.5"/>
+          </svg>
+          <span>Транспортом</span>
+        </button>
+      </div>
+
+      <div className="route-pickers" style={{ marginTop: 12 }}>
         <button
           className="route-picker"
           data-active={routingMode === 'from'}
@@ -53,13 +99,8 @@ export default function RoutingPanel({
           {routeFrom && (
             <span
               className="route-picker-clear"
-              onClick={(e) => {
-                e.stopPropagation();
-                setRouteFrom(null);
-              }}
-            >
-              ✕
-            </span>
+              onClick={(e) => { e.stopPropagation(); setRouteFrom(null); }}
+            >✕</span>
           )}
         </button>
 
@@ -80,53 +121,52 @@ export default function RoutingPanel({
           {routeTo && (
             <span
               className="route-picker-clear"
-              onClick={(e) => {
-                e.stopPropagation();
-                setRouteTo(null);
-              }}
-            >
-              ✕
-            </span>
+              onClick={(e) => { e.stopPropagation(); setRouteTo(null); }}
+            >✕</span>
           )}
         </button>
       </div>
 
-      <div className="section-label" style={{ marginTop: 14 }}>Зупинка по дорозі</div>
-
-      <div className="waypoint-options">
-        <button
-          className="waypoint-option"
-          data-active={waypointType === null}
-          onClick={() => setWaypointType(null)}
-        >
-          <span className="waypoint-option-icon">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-          </span>
-          <span>Без зупинки</span>
-        </button>
-        <button
-          className="waypoint-option"
-          data-active={waypointType === 'toilet'}
-          onClick={() => setWaypointType('toilet')}
-        >
-          <span className="waypoint-option-icon">
-            <CategoryIcon category="toilet" size={16} />
-          </span>
-          <span>Доступний туалет</span>
-        </button>
-        <button
-          className="waypoint-option"
-          data-active={waypointType === 'charging'}
-          onClick={() => setWaypointType('charging')}
-        >
-          <span className="waypoint-option-icon">
-            <CategoryIcon category="charging" size={16} />
-          </span>
-          <span>Зарядна станція</span>
-        </button>
-      </div>
+      {/* Waypoint section - only in walk mode */}
+      {!isTransit && (
+        <>
+          <div className="section-label" style={{ marginTop: 14 }}>Зупинка по дорозі</div>
+          <div className="waypoint-options">
+            <button
+              className="waypoint-option"
+              data-active={waypointType === null}
+              onClick={() => setWaypointType(null)}
+            >
+              <span className="waypoint-option-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+              </span>
+              <span>Без зупинки</span>
+            </button>
+            <button
+              className="waypoint-option"
+              data-active={waypointType === 'toilet'}
+              onClick={() => setWaypointType('toilet')}
+            >
+              <span className="waypoint-option-icon">
+                <CategoryIcon category="toilet" size={16} />
+              </span>
+              <span>Доступний туалет</span>
+            </button>
+            <button
+              className="waypoint-option"
+              data-active={waypointType === 'charging'}
+              onClick={() => setWaypointType('charging')}
+            >
+              <span className="waypoint-option-icon">
+                <CategoryIcon category="charging" size={16} />
+              </span>
+              <span>Зарядна станція</span>
+            </button>
+          </div>
+        </>
+      )}
 
       <button
         className="route-compute-btn"
@@ -163,6 +203,33 @@ export default function RoutingPanel({
             <span className="route-summary-label">Тривалість</span>
             <span className="route-summary-value">{formatDuration(routeData.duration_s)}</span>
           </div>
+
+          {/* Transit leg list */}
+          {routeData.legs && routeData.legs.length > 0 && (
+            <>
+              <div className="route-summary-waypoint">
+                <div className="route-summary-eyebrow">
+                  {transferLabel(routeData.transfers ?? 0)}
+                </div>
+                <ul className="route-legs">
+                  {routeData.legs.map((leg, i) => {
+                    const meta = MODE_META[leg.mode] || { icon: '·', label: leg.mode };
+                    const label = leg.mode === 'WALK'
+                      ? `Пішки ${formatDistance(leg.distance_m)}`
+                      : `${meta.label} ${leg.route || ''} · ${formatDuration(leg.duration_s)}`;
+                    return (
+                      <li key={i} className="route-leg-item">
+                        <span className="route-leg-icon">{meta.icon}</span>
+                        <span className="route-leg-text">{label.trim()}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            </>
+          )}
+
+          {/* Waypoint (walk only) */}
           {routeData.waypoint && (
             <div className="route-summary-waypoint">
               <div className="route-summary-eyebrow">Зупинка на маршруті</div>
