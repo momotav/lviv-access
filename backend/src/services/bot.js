@@ -1,19 +1,19 @@
 /**
- * Telegram bot — Lviv Access
+ * Telegram-бот — Lviv Access
  *
- * Commands:
- *   /start    Welcome + brief tutorial
- *   /help     List commands
- *   /find     Find points near user's location, with "Build route" buttons
- *   /add      Multi-step: location → category → name → description → photo → rating
- *   /cancel   Cancel current /add flow
+ * Команди:
+ *   /start    Привітання + коротка інструкція
+ *   /help     Список команд
+ *   /find     Знайти найближчі точки доступності + кнопки маршруту
+ *   /add      Покрокове додавання: локація → категорія → назва →
+ *             опис → фото → оцінка
+ *   /cancel   Скасувати поточне /add
  *
- * The /add flow now includes an optional photo step. Telegram users are
- * tracked by chat_id; points they add carry `created_by_telegram = chat_id`.
- *
- * Photos are stored on Cloudinary. The bot downloads the photo from
- * Telegram's CDN, uploads to Cloudinary via the unsigned upload preset
- * (with API key), and stores the resulting URL in the `photos` table.
+ * При показі точок у /find:
+ *   - 0 фото → одне текстове повідомлення з кнопкою маршруту
+ *   - 1 фото → sendPhoto з підписом і кнопкою
+ *   - 2+ фото → sendMediaGroup (галерея), потім окреме повідомлення
+ *     з кнопкою маршруту
  */
 
 import { Telegraf, Markup } from 'telegraf';
@@ -22,11 +22,11 @@ import { query } from '../db/pool.js';
 import { haversineMeters } from './geo.js';
 
 const CATEGORY_LABELS = {
-  ramp: '♿ Ramp',
-  toilet: '🚻 Accessible WC',
-  charging: '🔌 Charging point',
-  entrance: '🚪 Accessible entrance',
-  transport: '🚊 Low-floor transit',
+  ramp:      '♿ Пандус',
+  toilet:    '🚻 Доступний туалет',
+  charging:  '🔌 Зарядна станція',
+  entrance:  '🚪 Доступний вхід',
+  transport: '🚊 Низькопідлоговий транспорт',
 };
 
 const addState = new Map();
@@ -41,26 +41,35 @@ function buildRouteUrl({ from, to }) {
   return qs ? `${WEB_URL}/?${qs}` : WEB_URL;
 }
 
+function formatDistance(meters) {
+  if (meters < 1000) return `${Math.round(meters)} м`;
+  return `${(meters / 1000).toFixed(1)} км`;
+}
+
+function ratingStars(rating) {
+  if (!rating) return '';
+  const r = Math.round(Number(rating));
+  return '★'.repeat(r) + '☆'.repeat(5 - r);
+}
+
 /**
- * Upload a Telegram-hosted photo to Cloudinary.
- * Returns the secure_url on success, or null on failure.
+ * Завантажує фото з Telegram CDN у Cloudinary.
+ * Повертає secure_url або null.
  */
 async function uploadToCloudinary(telegramFileUrl) {
   const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
   const apiKey    = process.env.CLOUDINARY_API_KEY;
   const apiSecret = process.env.CLOUDINARY_API_SECRET;
   if (!cloudName || !apiKey || !apiSecret) {
-    console.warn('Cloudinary not configured — skipping photo upload');
+    console.warn('Cloudinary не налаштовано — пропускаю завантаження фото');
     return null;
   }
 
   try {
-    // Fetch the photo bytes from Telegram
     const res = await fetch(telegramFileUrl);
     if (!res.ok) throw new Error(`Telegram file fetch ${res.status}`);
     const buffer = Buffer.from(await res.arrayBuffer());
 
-    // Build signed Cloudinary upload request
     const folder = 'lviv-access';
     const timestamp = Math.floor(Date.now() / 1000);
     const paramsToSign = `folder=${folder}&timestamp=${timestamp}`;
@@ -87,79 +96,100 @@ async function uploadToCloudinary(telegramFileUrl) {
     const data = await uploadRes.json();
     return data.secure_url || null;
   } catch (err) {
-    console.error('Photo upload failed:', err.message);
+    console.error('Помилка завантаження фото:', err.message);
     return null;
   }
 }
 
 export function createBot(token) {
-  if (!token) throw new Error('TELEGRAM_BOT_TOKEN is not set');
+  if (!token) throw new Error('TELEGRAM_BOT_TOKEN не встановлено');
 
   const bot = new Telegraf(token);
 
+  // ============================================================
+  // /start
+  // ============================================================
   bot.start(async (ctx) => {
     await ctx.reply(
-      `👋 Welcome to *Lviv Access*\n\n` +
-      `I help map accessibility features around Lviv — ramps, accessible toilets, charging points, low-floor transit stops.\n\n` +
-      `*Commands:*\n` +
-      `/find — find accessibility points near you\n` +
-      `/add — add a new point to the map (with optional photo)\n` +
-      `/help — show this menu again\n\n` +
-      `Full map: ${WEB_URL}`,
+      `👋 Вітаємо у *Lviv Access*\n\n` +
+      `Безбар\u02bc\u0454рна карта Львова — пандуси, доступні туалети, зарядні станції, низькопідлоговий транспорт та інші точки доступності.\n\n` +
+      `*Команди:*\n` +
+      `/find — знайти точки поряд із вами\n` +
+      `/add — додати нову точку (з фото)\n` +
+      `/help — показати це меню\n\n` +
+      `🌐 Повна карта: ${WEB_URL}`,
       { parse_mode: 'Markdown' }
     );
   });
 
+  // ============================================================
+  // /help
+  // ============================================================
   bot.help(async (ctx) => {
     await ctx.reply(
-      `*Available commands:*\n\n` +
-      `/find — share your location, I'll list nearby accessibility points\n` +
-      `/add — start adding a new point (I'll ask you step by step)\n` +
-      `/cancel — abort the current /add\n\n` +
-      `Map: ${WEB_URL}`,
+      `*Доступні команди:*\n\n` +
+      `📍 /find — поділіться локацією, я покажу найближчі точки доступності\n` +
+      `✏️ /add — почати додавання нової точки (запитаю покроково)\n` +
+      `❌ /cancel — скасувати поточне додавання\n\n` +
+      `🌐 Карта: ${WEB_URL}`,
       { parse_mode: 'Markdown' }
     );
   });
 
+  // ============================================================
+  // /cancel
+  // ============================================================
   bot.command('cancel', async (ctx) => {
     if (addState.has(ctx.chat.id)) {
       addState.delete(ctx.chat.id);
-      await ctx.reply('❌ Cancelled. Send /add to start again.');
+      await ctx.reply('❌ Скасовано. Надішліть /add, щоб почати знову.');
     } else {
-      await ctx.reply('Nothing to cancel.');
+      await ctx.reply('Немає чого скасовувати.');
     }
   });
 
+  // ============================================================
+  // /find
+  // ============================================================
   bot.command('find', async (ctx) => {
     addState.delete(ctx.chat.id);
     await ctx.reply(
-      '📍 Send me your location and I\'ll find the nearest accessibility points.\n\n' +
-      'On Telegram mobile: tap the 📎 attachment icon → Location → Send My Current Location.',
-      Markup.keyboard([Markup.button.locationRequest('📍 Send my location')])
-        .oneTime()
-        .resize()
+      '📍 Надішліть свою локацію, і я знайду найближчі точки доступності.\n\n' +
+      '_На мобільному:_ натисніть 📎 → Локація → Надіслати поточну локацію.',
+      {
+        parse_mode: 'Markdown',
+        ...Markup.keyboard([Markup.button.locationRequest('📍 Надіслати локацію')])
+          .oneTime()
+          .resize(),
+      }
     );
     addState.set(ctx.chat.id, { step: 'find-location' });
   });
 
+  // ============================================================
+  // /add
+  // ============================================================
   bot.command('add', async (ctx) => {
     addState.set(ctx.chat.id, {
       step: 'location',
       data: { photo_urls: [] },
     });
     await ctx.reply(
-      '✏️ *Adding a new accessibility point.*\n\n' +
-      'Step 1/6 — send me the *location* of the point.\n\n' +
-      'On mobile: 📎 → Location → Send. Or send /cancel to abort.',
+      '✏️ *Додавання нової точки доступності*\n\n' +
+      '*Крок 1/6* — надішліть *локацію* точки.\n\n' +
+      '_На мобільному:_ 📎 → Локація → Надіслати. Або /cancel для скасування.',
       {
         parse_mode: 'Markdown',
-        ...Markup.keyboard([Markup.button.locationRequest('📍 Send location')])
+        ...Markup.keyboard([Markup.button.locationRequest('📍 Надіслати локацію')])
           .oneTime()
           .resize(),
       }
     );
   });
 
+  // ============================================================
+  // Обробка локацій
+  // ============================================================
   bot.on('location', async (ctx) => {
     const chatId = ctx.chat.id;
     const state = addState.get(chatId);
@@ -177,7 +207,7 @@ export function createBot(token) {
       state.step = 'category';
 
       await ctx.reply(
-        '✅ Location received.\n\n*Step 2/6 — pick a category:*',
+        '✅ Локацію отримано.\n\n*Крок 2/6 — оберіть категорію:*',
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
@@ -193,15 +223,18 @@ export function createBot(token) {
     }
 
     await ctx.reply(
-      'Received a location, but I wasn\'t expecting one. Send /find or /add first.'
+      'Локацію отримано, але я її не очікував. Спочатку надішліть /find або /add.'
     );
   });
 
+  // ============================================================
+  // Вибір категорії
+  // ============================================================
   bot.action(/^cat:(.+)$/, async (ctx) => {
     const chatId = ctx.chat.id;
     const state = addState.get(chatId);
     if (!state || state.step !== 'category') {
-      await ctx.answerCbQuery('That button is no longer active.');
+      await ctx.answerCbQuery('Ця кнопка вже неактивна.');
       return;
     }
     const category = ctx.match[1];
@@ -210,65 +243,71 @@ export function createBot(token) {
 
     await ctx.answerCbQuery(`✅ ${CATEGORY_LABELS[category]}`);
     await ctx.editMessageText(
-      `✅ Category: *${CATEGORY_LABELS[category]}*`,
+      `✅ Категорія: *${CATEGORY_LABELS[category]}*`,
       { parse_mode: 'Markdown' }
     );
     await ctx.reply(
-      '*Step 3/6 — what\'s the name of this point?*\n\n' +
-      'e.g., "Ramp at Lviv Opera House" or "Toilet at Forum Lviv"',
+      '*Крок 3/6 — назва точки.*\n\n' +
+      '_Наприклад:_ «Пандус біля Львівської опери», «Туалет у Forum Lviv»',
       { parse_mode: 'Markdown' }
     );
   });
 
+  // ============================================================
+  // Оцінка
+  // ============================================================
   bot.action(/^rate:([1-5]|skip)$/, async (ctx) => {
     const chatId = ctx.chat.id;
     const state = addState.get(chatId);
     if (!state || state.step !== 'rating') {
-      await ctx.answerCbQuery('That button is no longer active.');
+      await ctx.answerCbQuery('Ця кнопка вже неактивна.');
       return;
     }
     const choice = ctx.match[1];
     state.data.rating = choice === 'skip' ? null : parseInt(choice, 10);
 
     await ctx.answerCbQuery(
-      choice === 'skip' ? 'Skipped' : `${'★'.repeat(parseInt(choice, 10))}`
+      choice === 'skip' ? 'Пропущено' : ratingStars(parseInt(choice, 10))
     );
     await ctx.editMessageText(
       choice === 'skip'
-        ? '✅ Rating: skipped'
-        : `✅ Rating: ${'★'.repeat(parseInt(choice, 10))}${'☆'.repeat(5 - parseInt(choice, 10))}`
+        ? '✅ Оцінка: пропущено'
+        : `✅ Оцінка: ${ratingStars(parseInt(choice, 10))}`
     );
     await savePoint(ctx, state.data);
     addState.delete(chatId);
   });
 
+  // ============================================================
+  // Пропуск опису
+  // ============================================================
   bot.action('desc:skip', async (ctx) => {
     const chatId = ctx.chat.id;
     const state = addState.get(chatId);
     if (!state || state.step !== 'description') {
-      await ctx.answerCbQuery('That button is no longer active.');
+      await ctx.answerCbQuery('Ця кнопка вже неактивна.');
       return;
     }
     state.data.description = null;
     state.step = 'photo';
-    await ctx.answerCbQuery('Skipped');
-    await ctx.editMessageText('✅ Description: skipped');
+    await ctx.answerCbQuery('Пропущено');
+    await ctx.editMessageText('✅ Опис: пропущено');
     await askForPhoto(ctx);
   });
 
   // ============================================================
-  // NEW: Photo step
+  // Етап фото
   // ============================================================
   bot.action('photo:skip', async (ctx) => {
     const chatId = ctx.chat.id;
     const state = addState.get(chatId);
     if (!state || state.step !== 'photo') {
-      await ctx.answerCbQuery('That button is no longer active.');
+      await ctx.answerCbQuery('Ця кнопка вже неактивна.');
       return;
     }
     state.step = 'rating';
-    await ctx.answerCbQuery('Skipped');
-    await ctx.editMessageText('✅ Photo: skipped');
+    await ctx.answerCbQuery('Пропущено');
+    await ctx.editMessageText('✅ Фото: пропущено');
     await askForRating(ctx);
   });
 
@@ -276,31 +315,29 @@ export function createBot(token) {
     const chatId = ctx.chat.id;
     const state = addState.get(chatId);
     if (!state || state.step !== 'photo') {
-      await ctx.answerCbQuery('That button is no longer active.');
+      await ctx.answerCbQuery('Ця кнопка вже неактивна.');
       return;
     }
     state.step = 'rating';
     await ctx.answerCbQuery('OK');
-    await ctx.editMessageText(`✅ Photos uploaded: ${state.data.photo_urls.length}`);
+    await ctx.editMessageText(`✅ Завантажено фото: ${state.data.photo_urls.length}`);
     await askForRating(ctx);
   });
 
-  // Handle incoming photo
   bot.on('photo', async (ctx) => {
     const chatId = ctx.chat.id;
     const state = addState.get(chatId);
     if (!state || state.step !== 'photo') {
-      await ctx.reply('I\'m not expecting a photo right now. Send /add to start.');
+      await ctx.reply('Зараз я не очікую фото. Надішліть /add, щоб почати.');
       return;
     }
     if (state.data.photo_urls.length >= 3) {
-      await ctx.reply('Maximum 3 photos. Tap "Done" or "Skip" when ready.');
+      await ctx.reply('Максимум 3 фото. Натисніть «Готово» або «Пропустити».');
       return;
     }
 
-    await ctx.reply('📤 Uploading photo…');
+    await ctx.reply('📤 Завантажую фото…');
 
-    // Pick the highest-resolution version
     const photos = ctx.message.photo;
     const best = photos[photos.length - 1];
 
@@ -311,34 +348,37 @@ export function createBot(token) {
       if (url) {
         state.data.photo_urls.push(url);
         await ctx.reply(
-          `✅ Photo ${state.data.photo_urls.length}/3 uploaded.` +
+          `✅ Фото ${state.data.photo_urls.length}/3 завантажено.` +
           (state.data.photo_urls.length < 3
-            ? ' Send another, or tap "Done" / "Skip":'
-            : ' Maximum reached — tap "Done":'),
+            ? ' Надішліть ще або натисніть «Готово» / «Пропустити»:'
+            : ' Максимум досягнуто — натисніть «Готово»:'),
           Markup.inlineKeyboard([
-            [Markup.button.callback('Done — add point', 'photo:done')],
-            [Markup.button.callback('Skip the rest', 'photo:skip')],
+            [Markup.button.callback('✅ Готово — додати точку', 'photo:done')],
+            [Markup.button.callback('⏭ Пропустити решту', 'photo:skip')],
           ])
         );
       } else {
         await ctx.reply(
-          '⚠️ Photo upload failed. You can try sending it again, or skip:',
+          '⚠️ Не вдалося завантажити фото. Спробуйте надіслати ще раз або пропустіть:',
           Markup.inlineKeyboard([
-            [Markup.button.callback('Skip photos', 'photo:skip')],
+            [Markup.button.callback('⏭ Пропустити фото', 'photo:skip')],
           ])
         );
       }
     } catch (err) {
-      console.error('Photo handling error:', err);
+      console.error('Помилка обробки фото:', err);
       await ctx.reply(
-        '⚠️ Sorry, something went wrong with the photo. Skip and continue?',
+        '⚠️ На жаль, сталася помилка з фото. Пропустити та продовжити?',
         Markup.inlineKeyboard([
-          [Markup.button.callback('Skip photos', 'photo:skip')],
+          [Markup.button.callback('⏭ Пропустити фото', 'photo:skip')],
         ])
       );
     }
   });
 
+  // ============================================================
+  // Текстові повідомлення
+  // ============================================================
   bot.on('text', async (ctx) => {
     if (ctx.message.text.startsWith('/')) return;
 
@@ -347,7 +387,7 @@ export function createBot(token) {
 
     if (!state) {
       await ctx.reply(
-        '🤔 I\'m not sure what to do with that. Try /find or /add. Send /help for the full list.'
+        '🤔 Я не знаю, що з цим робити. Спробуйте /find або /add. Надішліть /help для повного списку команд.'
       );
       return;
     }
@@ -356,19 +396,19 @@ export function createBot(token) {
 
     if (state.step === 'name') {
       if (text.length < 2 || text.length > 200) {
-        await ctx.reply('Name should be 2-200 characters. Try again, or /cancel.');
+        await ctx.reply('Назва має містити 2-200 символів. Спробуйте знову або /cancel.');
         return;
       }
       state.data.name = text;
       state.step = 'description';
       await ctx.reply(
-        '*Step 4/6 — optional description.*\n\n' +
-        'Send a short description (e.g., "Wooden ramp at side entrance, fits a standard wheelchair").\n' +
-        'Or skip:',
+        '*Крок 4/6 — опис (необов\u02bcязково).*\n\n' +
+        'Надішліть короткий опис (наприклад: «Дерев\u02bcяний пандус біля бокового входу, підходить для стандартного візка»).\n' +
+        'Або пропустіть:',
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
-            Markup.button.callback('Skip description', 'desc:skip'),
+            Markup.button.callback('⏭ Пропустити опис', 'desc:skip'),
           ]),
         }
       );
@@ -377,7 +417,7 @@ export function createBot(token) {
 
     if (state.step === 'description') {
       if (text.length > 1000) {
-        await ctx.reply('Description is too long (max 1000 chars). Try again, or skip.');
+        await ctx.reply('Опис занадто довгий (макс. 1000 символів). Спробуйте знову або пропустіть.');
         return;
       }
       state.data.description = text;
@@ -387,26 +427,25 @@ export function createBot(token) {
     }
 
     await ctx.reply(
-      'I\'m waiting for a different kind of input. Send /cancel to start over.'
+      'Я очікую інший тип даних. Надішліть /cancel, щоб почати знову.'
     );
   });
 
   bot.catch((err, ctx) => {
-    console.error('Bot error for update', ctx.update.update_id, err);
-    ctx.reply('Something went wrong. Please try /cancel and try again.').catch(() => {});
+    console.error('Помилка бота для оновлення', ctx.update.update_id, err);
+    ctx.reply('Щось пішло не так. Спробуйте /cancel і почніть знову.').catch(() => {});
   });
 
   return bot;
 }
 
 // ====================================================================
-// HELPERS
+// ДОПОМІЖНІ ФУНКЦІЇ
 // ====================================================================
 
 async function askForPhoto(ctx) {
   const cloudinaryReady = !!process.env.CLOUDINARY_CLOUD_NAME;
   if (!cloudinaryReady) {
-    // Skip photo step entirely if Cloudinary isn't configured
     const state = addState.get(ctx.chat.id);
     if (state) state.step = 'rating';
     await askForRating(ctx);
@@ -414,12 +453,12 @@ async function askForPhoto(ctx) {
   }
 
   await ctx.reply(
-    '*Step 5/6 — optional photos.*\n\n' +
-    'Send up to 3 photos of this point (one at a time). Or skip:',
+    '*Крок 5/6 — фотографії (необов\u02bcязково).*\n\n' +
+    'Надішліть до 3 фотографій точки (по одній). Або пропустіть:',
     {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([
-        [Markup.button.callback('Skip photos', 'photo:skip')],
+        [Markup.button.callback('⏭ Пропустити фото', 'photo:skip')],
       ]),
     }
   );
@@ -427,8 +466,8 @@ async function askForPhoto(ctx) {
 
 async function askForRating(ctx) {
   await ctx.reply(
-    '*Step 6/6 — accessibility rating (optional).*\n\n' +
-    'How accessible is this point, on a scale of 1-5?',
+    '*Крок 6/6 — оцінка доступності (необов\u02bcязково).*\n\n' +
+    'Наскільки доступна ця точка за шкалою 1-5?',
     {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([
@@ -441,7 +480,7 @@ async function askForRating(ctx) {
           Markup.button.callback('★★★★', 'rate:4'),
           Markup.button.callback('★★★★★', 'rate:5'),
         ],
-        [Markup.button.callback('Skip rating', 'rate:skip')],
+        [Markup.button.callback('⏭ Пропустити оцінку', 'rate:skip')],
       ]),
     }
   );
@@ -469,7 +508,6 @@ async function savePoint(ctx, data) {
 
     const pointId = insertResult.rows[0].id;
 
-    // Attach photos uploaded earlier
     for (const url of (data.photo_urls || [])) {
       await query(
         `INSERT INTO photos (point_id, url, uploaded_by_tg)
@@ -478,46 +516,55 @@ async function savePoint(ctx, data) {
       );
     }
 
-    const ratingStr = data.rating
-      ? `${'★'.repeat(data.rating)}${'☆'.repeat(5 - data.rating)}`
-      : 'not rated';
+    const ratingStr = data.rating ? ratingStars(data.rating) : 'не оцінено';
 
     const photoNote = (data.photo_urls || []).length > 0
-      ? `📸 Photos: ${data.photo_urls.length}\n`
+      ? `📸 Фото: ${data.photo_urls.length}\n`
       : '';
 
     const routeUrl = buildRouteUrl({ to: { lat: data.lat, lng: data.lng } });
 
     await ctx.reply(
-      `🎉 *Saved!*\n\n` +
+      `🎉 *Збережено!*\n\n` +
       `*${data.name}*\n` +
       `${CATEGORY_LABELS[data.category]}\n` +
       `📍 ${data.lat.toFixed(5)}, ${data.lng.toFixed(5)}\n` +
-      `Rating: ${ratingStr}\n` +
+      `Оцінка: ${ratingStr}\n` +
       photoNote,
       {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([
-          [Markup.button.url('🗺️ Build route here', routeUrl)],
-          [Markup.button.url('Open map', WEB_URL)],
+          [Markup.button.url('🗺️ Побудувати маршрут сюди', routeUrl)],
+          [Markup.button.url('🌐 Відкрити карту', WEB_URL)],
         ]),
       }
     );
   } catch (err) {
-    console.error('Failed to save point:', err);
-    await ctx.reply('❌ Failed to save the point. Please try again later.');
+    console.error('Не вдалося зберегти точку:', err);
+    await ctx.reply('❌ Не вдалося зберегти точку. Спробуйте пізніше.');
   }
 }
 
+// ====================================================================
+// /find — пошук найближчих точок з фото
+// ====================================================================
+
 async function handleFindNearby(ctx, lat, lng) {
   try {
+    // Тягнемо точки разом з їх фото одним запитом
     const result = await query(
-      `SELECT id, category, name, description, lat, lng, accessibility_rating
-       FROM points`
+      `SELECT p.id, p.category, p.name, p.description,
+              p.lat, p.lng, p.accessibility_rating,
+              COALESCE(
+                (SELECT array_agg(url ORDER BY created_at ASC)
+                 FROM photos WHERE point_id = p.id),
+                '{}'::text[]
+              ) AS photo_urls
+       FROM points p`
     );
 
     if (result.rows.length === 0) {
-      await ctx.reply('No accessibility points in the database yet.');
+      await ctx.reply('Поки що немає точок доступності у базі.');
       return;
     }
 
@@ -527,45 +574,112 @@ async function handleFindNearby(ctx, lat, lng) {
       .slice(0, 5);
 
     await ctx.reply(
-      `*Nearest accessibility points* (from your location):`,
+      `*Найближчі точки доступності* від вашої локації:`,
       { parse_mode: 'Markdown' }
     );
 
     for (let i = 0; i < scored.length; i++) {
       const p = scored[i];
-      const distStr = p.distance < 1000
-        ? `${Math.round(p.distance)} m`
-        : `${(p.distance / 1000).toFixed(1)} km`;
-      const ratingStr = p.accessibility_rating
-        ? '\n' + '★'.repeat(p.accessibility_rating) +
-          '☆'.repeat(5 - p.accessibility_rating)
-        : '';
-      const descStr = p.description
-        ? `\n_${p.description.length > 120
-            ? p.description.substring(0, 117) + '…'
-            : p.description}_`
-        : '';
-
-      const routeUrl = buildRouteUrl({
-        from: { lat, lng },
-        to: { lat: p.lat, lng: p.lng },
-      });
-
-      await ctx.reply(
-        `${i + 1}. ${CATEGORY_LABELS[p.category] || p.category}\n` +
-        `*${p.name}* — ${distStr}` +
-        ratingStr +
-        descStr,
-        {
-          parse_mode: 'Markdown',
-          ...Markup.inlineKeyboard([
-            [Markup.button.url('🗺️ Build route here', routeUrl)],
-          ]),
-        }
-      );
+      await sendPointCard(ctx, p, i + 1, lat, lng);
     }
   } catch (err) {
-    console.error('Find nearby failed:', err);
-    await ctx.reply('Failed to look up points. Please try again later.');
+    console.error('Помилка пошуку:', err);
+    await ctx.reply('Не вдалося отримати точки. Спробуйте пізніше.');
+  }
+}
+
+/**
+ * Надсилає картку однієї точки в /find.
+ *
+ *   0 фото → одне текстове повідомлення з кнопкою маршруту
+ *   1 фото → sendPhoto з підписом + кнопка
+ *   2+ фото → sendMediaGroup (галерея) + окреме текстове повідомлення з кнопкою
+ *
+ * (Telegram не дозволяє inline-кнопки на mediaGroup, тому 2+ фото
+ * розділяємо на два повідомлення.)
+ */
+async function sendPointCard(ctx, p, index, userLat, userLng) {
+  const distStr = formatDistance(p.distance);
+  const categoryLabel = CATEGORY_LABELS[p.category] || p.category;
+  const ratingLine = p.accessibility_rating
+    ? `\n${ratingStars(p.accessibility_rating)}`
+    : '';
+
+  // Стискаємо опис, щоб уміщалось у Telegram caption (1024 chars)
+  const trimmedDesc = p.description
+    ? (p.description.length > 400
+        ? p.description.substring(0, 397) + '…'
+        : p.description)
+    : '';
+  const descLine = trimmedDesc ? `\n\n_${trimmedDesc}_` : '';
+
+  const caption =
+    `*${index}. ${p.name}*\n` +
+    `${categoryLabel} · ${distStr}` +
+    ratingLine +
+    descLine;
+
+  const routeUrl = buildRouteUrl({
+    from: { lat: userLat, lng: userLng },
+    to: { lat: p.lat, lng: p.lng },
+  });
+
+  const routeButton = Markup.inlineKeyboard([
+    [Markup.button.url('🗺️ Побудувати маршрут сюди', routeUrl)],
+  ]);
+
+  const photos = p.photo_urls || [];
+
+  // === 0 фото: просте текстове повідомлення ===
+  if (photos.length === 0) {
+    await ctx.reply(caption, {
+      parse_mode: 'Markdown',
+      ...routeButton,
+    });
+    return;
+  }
+
+  // === 1 фото: sendPhoto з підписом і кнопкою ===
+  if (photos.length === 1) {
+    try {
+      await ctx.replyWithPhoto(photos[0], {
+        caption,
+        parse_mode: 'Markdown',
+        ...routeButton,
+      });
+    } catch (err) {
+      // Якщо фото не доступне (404, expired CDN тощо) — fallback на текст
+      console.error('Помилка надсилання фото:', err.message);
+      await ctx.reply(caption, {
+        parse_mode: 'Markdown',
+        ...routeButton,
+      });
+    }
+    return;
+  }
+
+  // === 2+ фото: галерея + окреме повідомлення з кнопкою ===
+  try {
+    // Перші ДО 10 фото у галереї (Telegram limit). Підпис тільки на першому.
+    const mediaGroup = photos.slice(0, 10).map((url, idx) => ({
+      type: 'photo',
+      media: url,
+      ...(idx === 0
+        ? { caption, parse_mode: 'Markdown' }
+        : {}),
+    }));
+    await ctx.replyWithMediaGroup(mediaGroup);
+    // Окреме повідомлення з кнопкою маршруту
+    await ctx.reply(
+      `📸 ${photos.length} фото · натисніть, щоб побудувати маршрут:`,
+      routeButton
+    );
+  } catch (err) {
+    console.error('Помилка надсилання галереї:', err.message);
+    // Fallback на текст
+    await ctx.reply(caption, {
+      parse_mode: 'Markdown',
+      ...routeButton,
+    });
   }
 }
