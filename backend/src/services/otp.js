@@ -74,6 +74,7 @@ const PLAN_QUERY = `
           route { shortName longName }
           from { name lat lon }
           to   { name lat lon }
+          intermediateStops { name lat lon }
           legGeometry { points }
         }
       }
@@ -203,16 +204,33 @@ export async function getTransitRoute([fromLngLat, toLngLat], when = nextTuesday
   // Pick fastest accessible one
   const best = accessible.sort((a, b) => a.duration - b.duration)[0];
 
-  const legs = best.legs.map((leg) => ({
-    mode: leg.mode,
-    route: leg.route?.shortName ?? null,
-    routeLong: leg.route?.longName ?? null,
-    from: leg.from.name,
-    to: leg.to.name,
-    duration_s: Math.round(leg.duration),
-    distance_m: Math.round(leg.distance),
-    coordinates: decodePolyline(leg.legGeometry.points),
-  }));
+  const legs = best.legs.map((leg) => {
+    // Build full list of transit stops for this leg:
+    //   [boarding, ...intermediate, alighting]
+    // For WALK legs, this is just origin -> destination (no transit stops).
+    const isTransit = leg.mode !== 'WALK';
+    const stops = isTransit
+      ? [
+          { name: leg.from.name, lat: leg.from.lat, lng: leg.from.lon, role: 'board' },
+          ...(leg.intermediateStops || []).map((s) => ({
+            name: s.name, lat: s.lat, lng: s.lon, role: 'pass',
+          })),
+          { name: leg.to.name, lat: leg.to.lat, lng: leg.to.lon, role: 'alight' },
+        ]
+      : [];
+
+    return {
+      mode: leg.mode,
+      route: leg.route?.shortName ?? null,
+      routeLong: leg.route?.longName ?? null,
+      from: leg.from.name,
+      to: leg.to.name,
+      duration_s: Math.round(leg.duration),
+      distance_m: Math.round(leg.distance),
+      coordinates: decodePolyline(leg.legGeometry.points),
+      stops,
+    };
+  });
 
   const transitLegs = legs.filter((l) => l.mode !== 'WALK').length;
 
