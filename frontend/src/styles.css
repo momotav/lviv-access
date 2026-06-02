@@ -1422,6 +1422,12 @@ input, textarea, select {
    those styles and replace them with this — newer version with tooltip)
    ===================================================================== */
 
+/* =====================================================================
+   APPEND THESE STYLES TO THE END OF frontend/src/styles.css
+   (If you already appended the previous transit-stops-styles.css, FIND
+   those styles and replace them with this — newer version with tooltip)
+   ===================================================================== */
+
 /* Transit stop markers along route */
 .transit-stop-marker {
   background: transparent;
