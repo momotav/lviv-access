@@ -1415,3 +1415,76 @@ input, textarea, select {
   border: 1.5px solid white;
   opacity: 0.85;
 }
+
+/* =====================================================================
+   APPEND THESE STYLES TO THE END OF frontend/src/styles.css
+   (If you already appended the previous transit-stops-styles.css, FIND
+   those styles and replace them with this — newer version with tooltip)
+   ===================================================================== */
+
+/* Transit stop markers along route */
+.transit-stop-marker {
+  background: transparent;
+  border: none;
+}
+
+.transit-stop-dot {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 1px 3px rgba(17, 17, 17, 0.35);
+  transition: transform 0.12s;
+}
+
+.transit-stop-marker:hover .transit-stop-dot {
+  transform: scale(1.3);
+}
+
+/* Boarding / alighting stops: white ring */
+.transit-stop-dot[data-role="board"],
+.transit-stop-dot[data-role="alight"] {
+  border: 2.5px solid white;
+  background: var(--primary);
+}
+
+/* Intermediate "pass-through" stops: small subtle dot */
+.transit-stop-dot[data-role="pass"] {
+  background: var(--primary);
+  border: 1.5px solid white;
+  opacity: 0.85;
+}
+
+/* Tooltip on hover (replaces Leaflet defaults) */
+.leaflet-tooltip.stop-tooltip {
+  background: var(--surface, #FFFFFF);
+  color: var(--text, #111111);
+  border: 1px solid var(--line, #E7E5DF);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-family: var(--font, 'Inter', sans-serif);
+  font-size: 13px;
+  box-shadow: 0 4px 16px rgba(17, 17, 17, 0.12), 0 1px 4px rgba(17, 17, 17, 0.06);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.leaflet-tooltip.stop-tooltip::before {
+  border-top-color: var(--surface, #FFFFFF) !important;
+}
+
+.stop-tooltip-eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--primary, #0F4C5C);
+  margin-bottom: 3px;
+}
+
+.stop-tooltip-name {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--text, #111111);
+  line-height: 1.3;
+}
