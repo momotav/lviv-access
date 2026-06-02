@@ -34,6 +34,21 @@ function buildEndpointIcon(label, color) {
   });
 }
 
+// Small circle marker for transit stops along a route.
+// "board" / "alight" — slightly bigger, white border
+// "pass" — small dot, no border
+function buildStopIcon(role) {
+  const isEndpoint = role === 'board' || role === 'alight';
+  const size = isEndpoint ? 14 : 9;
+  const html = `<div class="transit-stop-dot" data-role="${role}"></div>`;
+  return L.divIcon({
+    className: 'transit-stop-marker',
+    html,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
 function ClickHandler({ onMapClick, addMode, routingMode }) {
   useMapEvents({
     click(e) {
@@ -138,6 +153,20 @@ export default function MapView({
               <Polyline positions={positions} pathOptions={{ color: TRANSIT_COLOR, weight: 5, opacity: 0.95 }} />
             </React.Fragment>
           );
+        })}
+
+        {/* Transit stops along the route (only for transit mode) */}
+        {hasLegs && routeData.legs.flatMap((leg, legIdx) => {
+          if (leg.mode === 'WALK' || !leg.stops) return [];
+          return leg.stops.map((stop, stopIdx) => (
+            <Marker
+              key={`stop-${legIdx}-${stopIdx}`}
+              position={[stop.lat, stop.lng]}
+              icon={buildStopIcon(stop.role)}
+              title={stop.name}
+              zIndexOffset={-100}
+            />
+          ));
         })}
 
         {points.map((p) => (
