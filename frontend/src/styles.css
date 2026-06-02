@@ -1383,3 +1383,35 @@ input, textarea, select {
 .route-leg-text {
   flex: 1;
 }
+
+/* =====================================================================
+   APPEND THESE STYLES TO THE END OF frontend/src/styles.css
+   ===================================================================== */
+
+/* Transit stop markers along route */
+.transit-stop-marker {
+  background: transparent;
+  border: none;
+}
+
+.transit-stop-dot {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 1px 3px rgba(17, 17, 17, 0.35);
+}
+
+/* Boarding / alighting stops: white ring */
+.transit-stop-dot[data-role="board"],
+.transit-stop-dot[data-role="alight"] {
+  border: 2.5px solid white;
+  background: var(--primary);
+}
+
+/* Intermediate "pass-through" stops: small subtle dot */
+.transit-stop-dot[data-role="pass"] {
+  background: var(--primary);
+  border: 1.5px solid white;
+  opacity: 0.85;
+}
