@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, Tooltip, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { buildMarkerHtml } from '../lib/categories.jsx';
 
@@ -9,6 +9,19 @@ const DEFAULT_ZOOM = 15;
 // Per-mode polyline colours for transit
 const TRANSIT_COLOR = '#0F4C5C';   // matches primary
 const WALK_COLOR    = '#6B7280';   // muted grey for walking legs
+
+// Ukrainian labels used in stop tooltips
+const MODE_LABELS = {
+  TRAM:       'Трамвай',
+  BUS:        'Автобус',
+  TROLLEYBUS: 'Тролейбус',
+};
+
+const ROLE_LABELS = {
+  board:  'Посадка',
+  pass:   'Зупинка',
+  alight: 'Висадка',
+};
 
 function buildIcon(category) {
   return L.divIcon({
@@ -158,15 +171,31 @@ export default function MapView({
         {/* Transit stops along the route (only for transit mode) */}
         {hasLegs && routeData.legs.flatMap((leg, legIdx) => {
           if (leg.mode === 'WALK' || !leg.stops) return [];
-          return leg.stops.map((stop, stopIdx) => (
-            <Marker
-              key={`stop-${legIdx}-${stopIdx}`}
-              position={[stop.lat, stop.lng]}
-              icon={buildStopIcon(stop.role)}
-              title={stop.name}
-              zIndexOffset={-100}
-            />
-          ));
+
+          const modeLabel = MODE_LABELS[leg.mode] || leg.mode;
+          const routeLabel = leg.route ? `${modeLabel} ${leg.route}` : modeLabel;
+
+          return leg.stops.map((stop, stopIdx) => {
+            const roleLabel = ROLE_LABELS[stop.role] || '';
+            return (
+              <Marker
+                key={`stop-${legIdx}-${stopIdx}`}
+                position={[stop.lat, stop.lng]}
+                icon={buildStopIcon(stop.role)}
+                zIndexOffset={-100}
+              >
+                <Tooltip
+                  direction="top"
+                  offset={[0, -8]}
+                  opacity={1}
+                  className="stop-tooltip"
+                >
+                  <div className="stop-tooltip-eyebrow">{roleLabel} · {routeLabel}</div>
+                  <div className="stop-tooltip-name">{stop.name}</div>
+                </Tooltip>
+              </Marker>
+            );
+          });
         })}
 
         {points.map((p) => (
