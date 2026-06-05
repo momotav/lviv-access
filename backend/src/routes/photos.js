@@ -35,11 +35,12 @@ router.post('/sign', requireAuth, async (req, res, next) => {
       return res.status(500).json({ error: 'Photo upload not configured' });
     }
 
-    const folder = 'lviv-access';
     const timestamp = Math.floor(Date.now() / 1000);
 
-    // Per Cloudinary docs: sort params alphabetically, join with &, append secret, SHA1
-    const params = `folder=${folder}&timestamp=${timestamp}`;
+    // Per Cloudinary docs: only timestamp is signed (simplest valid signed upload).
+    // All optional upload parameters (folder, transformations, etc.) must be added
+    // to the signed string in alphabetical order if used. We keep this minimal.
+    const params = `timestamp=${timestamp}`;
     const signature = crypto
       .createHash('sha1')
       .update(params + apiSecret)
@@ -50,7 +51,6 @@ router.post('/sign', requireAuth, async (req, res, next) => {
       api_key: apiKey,
       signature,
       timestamp,
-      folder,
     });
   } catch (err) {
     next(err);
