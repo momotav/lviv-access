@@ -36,12 +36,15 @@ export default function AddPointModal({ coords, onClose, onSubmit }) {
     const succeeded = results
       .filter((r) => r.status === 'fulfilled')
       .map((r) => r.value);
-    const failed = results.length - succeeded.length;
+    const failures = results.filter((r) => r.status === 'rejected');
 
     setPhotoUrls((prev) => [...prev, ...succeeded]);
     setUploadingCount(0);
-    if (failed > 0) {
-      setError(`Не вдалося завантажити ${failed} фото`);
+    if (failures.length > 0) {
+      // Show the actual error from the first failure so we know what Cloudinary said
+      const reason = failures[0].reason?.message || 'невідома помилка';
+      console.error('Photo upload failures:', failures.map((f) => f.reason));
+      setError(`Не вдалося завантажити ${failures.length} фото: ${reason}`);
     }
   }
 
