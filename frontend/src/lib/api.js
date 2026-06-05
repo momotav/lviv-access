@@ -84,7 +84,6 @@ export async function uploadImageToCloudinary(file) {
   form.append('api_key', sig.api_key);
   form.append('timestamp', String(sig.timestamp));
   form.append('signature', sig.signature);
-  form.append('folder', sig.folder);
 
   const res = await fetch(
     `https://api.cloudinary.com/v1_1/${sig.cloud_name}/image/upload`,
@@ -92,7 +91,15 @@ export async function uploadImageToCloudinary(file) {
   );
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Cloudinary upload failed: ${text.substring(0, 200)}`);
+    console.error('Cloudinary upload failed:', res.status, text);
+    let detailedMsg = `Cloudinary ${res.status}`;
+    try {
+      const errorData = JSON.parse(text);
+      if (errorData?.error?.message) detailedMsg += `: ${errorData.error.message}`;
+    } catch {
+      detailedMsg += `: ${text.substring(0, 200)}`;
+    }
+    throw new Error(detailedMsg);
   }
   const data = await res.json();
   return data.secure_url;
