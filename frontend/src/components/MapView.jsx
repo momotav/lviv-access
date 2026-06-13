@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, Tooltip, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { buildMarkerHtml } from '../lib/categories.jsx';
@@ -71,6 +71,90 @@ function ClickHandler({ onMapClick, addMode, routingMode }) {
   return null;
 }
 
+// =====================================================================
+// CLUSTERING
+// =====================================================================
+//
+// Below zoom level 15 individual markers become hard to distinguish, so
+// we group nearby points into cluster bubbles. The clustering is grid-based:
+//
+//   1. Snap each point to a cell (cell size grows as you zoom out)
+//   2. Points in the same cell form one cluster
+//   3. Cells with only 1 point render as a normal individual marker
+//
+// On click of a cluster the map zooms in by 2 levels (Leaflet caps at maxZoom).
+// At zoom ≥ 15 clustering is disabled — every marker is shown individually.
+
+const CLUSTER_THRESHOLD_ZOOM = 15;  // zoom level at which we stop clustering
+
+// Cell size in degrees latitude per grid cell, indexed by zoom.
+// Smaller cells when zoomed in (more detail), larger when zoomed out.
+function cellSizeForZoom(zoom) {
+  // Approx 60-100 px on screen — tuned visually.
+  if (zoom <= 10) return 0.05;
+  if (zoom <= 11) return 0.025;
+  if (zoom <= 12) return 0.012;
+  if (zoom <= 13) return 0.006;
+  return 0.003; // zoom 14
+}
+
+function clusterPoints(points, zoom) {
+  if (zoom >= CLUSTER_THRESHOLD_ZOOM) {
+    // No clustering — every point is its own "cluster" of 1
+    return points.map((p) => ({ type: 'single', point: p }));
+  }
+
+  const cellSize = cellSizeForZoom(zoom);
+  const cells = new Map();
+
+  for (const p of points) {
+    const key = `${Math.floor(p.lat / cellSize)}|${Math.floor(p.lng / cellSize)}`;
+    if (!cells.has(key)) cells.set(key, []);
+    cells.get(key).push(p);
+  }
+
+  const result = [];
+  for (const [, group] of cells) {
+    if (group.length === 1) {
+      result.push({ type: 'single', point: group[0] });
+    } else {
+      // Cluster centroid = average of contained points
+      let sumLat = 0, sumLng = 0;
+      for (const p of group) { sumLat += p.lat; sumLng += p.lng; }
+      result.push({
+        type: 'cluster',
+        lat: sumLat / group.length,
+        lng: sumLng / group.length,
+        count: group.length,
+        points: group,
+      });
+    }
+  }
+  return result;
+}
+
+function buildClusterIcon(count) {
+  // Size scales with point count
+  const size = count >= 30 ? 56 : count >= 10 ? 46 : 38;
+  const html = `<div class="cluster-bubble" style="width:${size}px;height:${size}px">${count}</div>`;
+  return L.divIcon({
+    className: 'cluster-marker',
+    html,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+// Tracks current zoom so that clustering updates as the user zooms in/out
+function ZoomTracker({ onZoomChange }) {
+  const map = useMapEvents({
+    zoomend() {
+      onZoomChange(map.getZoom());
+    },
+  });
+  return null;
+}
+
 // Flip [[lng,lat]] -> [[lat,lng]] for Leaflet
 const flip = (coords) => coords.map(([lng, lat]) => [lat, lng]);
 
@@ -92,6 +176,13 @@ export default function MapView({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [addMode, routingMode, cancelInteraction]);
+
+  // Current map zoom — drives clustering decisions
+  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+  const [mapRef, setMapRef] = useState(null);
+
+  // Recompute clusters whenever points or zoom change
+  const clusters = useMemo(() => clusterPoints(points, zoom), [points, zoom]);
 
   const interactionMode = addMode
     ? 'add'
@@ -123,7 +214,13 @@ export default function MapView({
           <button onClick={cancelInteraction}>Скасувати</button>
         </div>
       )}
-      <MapContainer center={LVIV_CENTER} zoom={DEFAULT_ZOOM} className="map" scrollWheelZoom>
+      <MapContainer
+        center={LVIV_CENTER}
+        zoom={DEFAULT_ZOOM}
+        className="map"
+        scrollWheelZoom
+        ref={setMapRef}
+      >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
           url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
@@ -131,6 +228,7 @@ export default function MapView({
           maxZoom={20}
         />
         <ClickHandler addMode={addMode} routingMode={routingMode} onMapClick={onMapClick} />
+        <ZoomTracker onZoomChange={setZoom} />
 
         {/* Walk-mode route (single polyline) */}
         {fallbackLine && (
@@ -198,14 +296,34 @@ export default function MapView({
           });
         })}
 
-        {points.map((p) => (
-          <Marker
-            key={p.id}
-            position={[p.lat, p.lng]}
-            icon={buildIcon(p.category)}
-            eventHandlers={{ click: () => onPointClick(p) }}
-          />
-        ))}
+        {clusters.map((c, i) => {
+          if (c.type === 'single') {
+            const p = c.point;
+            return (
+              <Marker
+                key={`pt-${p.id}`}
+                position={[p.lat, p.lng]}
+                icon={buildIcon(p.category)}
+                eventHandlers={{ click: () => onPointClick(p) }}
+              />
+            );
+          }
+          // Cluster bubble
+          return (
+            <Marker
+              key={`cluster-${i}`}
+              position={[c.lat, c.lng]}
+              icon={buildClusterIcon(c.count)}
+              eventHandlers={{
+                click: () => {
+                  if (!mapRef) return;
+                  const newZoom = Math.min(mapRef.getMaxZoom(), zoom + 2);
+                  mapRef.setView([c.lat, c.lng], newZoom, { animate: true });
+                },
+              }}
+            />
+          );
+        })}
 
         {routeFrom && (
           <Marker
